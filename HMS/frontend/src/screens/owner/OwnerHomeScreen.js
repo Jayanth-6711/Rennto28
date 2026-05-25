@@ -1,0 +1,5577 @@
+// import { Ionicons } from "@expo/vector-icons";
+// import * as DocumentPicker from "expo-document-picker";
+// import * as FileSystem from "expo-file-system";
+// import { BookingContext } from "@/src/context/BookingContext";
+// import { useNavigation } from "@react-navigation/native";
+// import { useContext } from "react";
+// import { useWindowDimensions } from "react-native";
+// import { useEffect, useRef, useState } from "react";
+// import BASE_URL from "@/src/config/Api";
+// import COLORS from "@/src/theme/colors";
+// import {
+//   Animated,
+//   Dimensions,
+//   Image,
+//   KeyboardAvoidingView,
+//   Linking,
+//   Modal,
+//   Platform,
+//   ScrollView,
+//   StyleSheet,
+//   Text,
+//   TextInput,
+//   TouchableOpacity,
+//   View,
+// } from "react-native";
+// import { PinchGestureHandler, State } from "react-native-gesture-handler";
+// import { WebView } from "react-native-webview";
+
+// const CARD_HEIGHT = 560;
+
+// export default function BuildingScreen({ route }) {
+//   const [apartments, setApartments] = useState({});
+//   const [apartmentCounts, setApartmentCounts] = useState({});
+
+//   const phone = route?.params?.phone;
+//   const navigation = useNavigation();
+//   const [response_data, setResponseData] = useState(null);
+//   const { pendingCount, setRequests } = useContext(BookingContext);
+
+//   // const propertyStayType = response_data?.stay_type || "hostel";
+//   const ownerName = response_data?.owner?.name;
+//   const ownerPhone = response_data?.owner?.phone;
+//   const floorsData = response_data?.building_layout;
+//   // const roomsData = response_data?.building_layout?.flatMap(floor => floor.rooms);
+//   const roomsData =
+//     response_data?.building_layout?.flatMap(floor => floor.rooms || []) || [];
+//   // const bedsData = response_data?.building_layout?.flatMap(floor =>
+//   //   floor.rooms.map(room => room.beds)
+//   // );
+//   const bedsData =
+//     response_data?.building_layout?.flatMap(floor =>
+//       (floor.rooms || []).flatMap(room => room.beds || [])
+//     ) || [];
+//   // const [ownerData, setOwnerData] = useState(null);
+//   // const { phone } = useLocalSearchParams();
+//   const width = Dimensions.get("window").width;
+//   const SIDEBAR_WIDTH = 64;
+//   const CONTENT_GAP = 12;
+//   const CONTAINER_PADDING = 16;
+//   const availableWidth = Math.max(
+//     320,
+//     Math.round(width - SIDEBAR_WIDTH - CONTENT_GAP - CONTAINER_PADDING * 2),
+//   );
+//   const baseCardWidth = availableWidth;
+//   const [sliderWidth, setSliderWidth] = useState(0);
+//   const SPACING = 12;
+//   const cardWidth = (sliderWidth || baseCardWidth) - SPACING;
+//   const sliderRef = useRef(null);
+//   const sidebarRef = useRef(null);
+//   const [activeIndex, setActiveIndex] = useState(0);
+//   const [filterMode, setFilterMode] = useState(null);
+//   const [bedCounts, setBedCounts] = useState({});
+//   const [modalVisible, setModalVisible] = useState(false);
+//   const [selectedFloor, setSelectedFloor] = useState(null);
+//   const [selectedRoom, setSelectedRoom] = useState(null);
+//   const [tenantName, setTenantName] = useState("");
+//   const [contactNumber, setContactNumber] = useState("");
+//   const [tenantPhone, settenantPhone] = useState("");
+//   const [bedNumber, setBedNumber] = useState(1);
+//   const [monthlyRent, setMonthlyRent] = useState("");
+//   const [checkIn, setCheckIn] = useState("");
+//   const [checkOut, setCheckOut] = useState("");
+//   const [tenants, setTenants] = useState({});
+//   const [idProofFile, setIdProofFile] = useState("");
+//   const [idProofUri, setIdProofUri] = useState("");
+//   const [idPreviewVisible, setIdPreviewVisible] = useState(false);
+//   const [idPreviewHtml, setIdPreviewHtml] = useState("");
+//   const [idOpenUri, setIdOpenUri] = useState("");
+//   const [previewUri, setPreviewUri] = useState("");
+//   const [showBottomViewId, setShowBottomViewId] = useState(false);
+//   const [previewScale, setPreviewScale] = useState(1);
+//   const [editAll] = useState(false);
+//   const [editValues, setEditValues] = useState({});
+//   const [rowEditIndex, setRowEditIndex] = useState(null);
+//   const [rowEditValues, setRowEditValues] = useState({});
+//   const [tenantsExpanded, setTenantsExpanded] = useState(true);
+//   const [selectedSection, setSelectedSection] = useState(null);
+//   const [pendingAllotment, setPendingAllotment] = useState(null);
+//   const onPinchStateChange = (e) => {
+//     if (e.nativeEvent.state === State.END) {
+//       setPreviewScale((prev) => Math.min(3, Math.max(1, prev)));
+//     }
+//   };
+//   const floorPulse = useRef(new Animated.Value(0.8)).current;
+//   const floorScale = floorPulse.interpolate({
+//     inputRange: [0.8, 1],
+//     outputRange: [0.99, 1.01],
+//   });
+//   useEffect(() => {
+//     Animated.loop(
+//       Animated.sequence([
+//         Animated.timing(floorPulse, {
+//           toValue: 1,
+//           duration: 800,
+//           useNativeDriver: true,
+//         }),
+//         Animated.timing(floorPulse, {
+//           toValue: 0.8,
+//           duration: 800,
+//           useNativeDriver: true,
+//         }),
+//       ]),
+//     ).start();
+//   }, [floorPulse]);
+
+//   const [touchedName, setTouchedName] = useState(false);
+//   const [touchedPhone, setTouchedPhone] = useState(false);
+//   const [touchedEmail, setTouchedEmail] = useState(false);
+//   const [touchedRent, setTouchedRent] = useState(false);
+//   const [dashboardData, setDashboardData] = useState(null);
+
+//   useEffect(() => {
+//     if (!phone) return;
+
+//     const fetchData = async () => {
+//       try {
+//         const detailsRes = await fetch(
+//           `${BASE_URL}/api/details/${encodeURIComponent(phone)}/`
+//         );
+//         const detailsData = await detailsRes.json();
+//         setResponseData(detailsData);
+
+//         if (detailsData.property_type === "hostel") {
+//           const hostelRes = await fetch(
+//             `${BASE_URL}/api/getbeds/${encodeURIComponent(phone)}/`
+//           );
+//           const hostelData = await hostelRes.json();
+
+//           if (hostelData.data?.length > 0) {
+//             const formattedTenants = {};
+//             const counts = {};
+
+//             hostelData.data.forEach((t) => {
+//               const key = `Floor ${t.floor}-${t.roomno}`;
+//               if (!formattedTenants[key]) formattedTenants[key] = [];
+//               formattedTenants[key].push(t);
+//             });
+
+//             Object.keys(formattedTenants).forEach((key) => {
+//               counts[key] = formattedTenants[key].length;
+//             });
+
+//             setTenants(formattedTenants);
+//             setBedCounts(counts);
+//           }
+
+//         } else if (detailsData.property_type === "apartment") {
+//           const apartmentRes = await fetch(
+//             `${BASE_URL}/api/getapartmentbeds/${encodeURIComponent(phone)}/`
+//           );
+//           const apartmentData = await apartmentRes.json();
+
+//           console.log("Apartment API Raw:", apartmentData);
+
+//           if (apartmentData.data?.length > 0) {
+//             const formattedApartments = {};
+//             const counts = {};
+
+//             // apartmentData.data.forEach((a) => {
+//             //   const key = `Floor ${a.floor}-${a.flatno}`;
+//             //   if (!formattedApartments[key]) formattedApartments[key] = [];
+//             //   formattedApartments[key].push(a);
+//             // });
+//             apartmentData.data.forEach((a) => {
+//               const key = `Floor ${a.floor}-${a.flatno}`; // Make sure flatno exists in API
+//               if (!formattedApartments[key]) formattedApartments[key] = [];
+//               formattedApartments[key].push(a);
+//             });
+
+//             // Object.keys(formattedApartments).forEach((key) => {
+//             //   counts[key] = formattedApartments[key].length;
+//             // });
+//             Object.keys(formattedApartments).forEach((key) => {
+//               counts[key] = formattedApartments[key].length;
+//             });
+//             // setApartments(formattedApartments);
+//             // setApartmentCounts(counts);
+//             setApartments(formattedApartments); // normalized state for deletion
+//             setApartmentCounts(counts);
+//           }
+
+//         }
+
+//         else if (detailsData.property_type === "commercial") {
+//           const commercialRes = await fetch(
+//             `${BASE_URL}/api/getcommercialbeds/${encodeURIComponent(phone)}/`
+//           );
+//           const commercialData = await commercialRes.json();
+
+//           console.log("Commercial API Raw:", commercialData);
+
+//           if (commercialData.data?.length > 0) {
+//             const formattedCommercial = {};
+//             const counts = {};
+
+//             commercialData.data.forEach((c) => {
+//               const key = `Floor ${c.floor}-${c.sectionNo}`; // ✅ IMPORTANT
+//               if (!formattedCommercial[key]) formattedCommercial[key] = [];
+//               formattedCommercial[key].push(c);
+//             });
+
+//             Object.keys(formattedCommercial).forEach((key) => {
+//               counts[key] = formattedCommercial[key].length;
+//             });
+
+//             // ✅ reuse existing states (no extra changes needed)
+//             setApartments(formattedCommercial);
+//             setApartmentCounts(counts);
+//           }
+//         }
+
+//       } catch (err) {
+//         console.log("Fetch Error:", err);
+//       }
+//     };
+
+//     fetchData();
+//   }, [phone, refreshTrigger]);
+
+//   useEffect(() => {
+//     if (route.params?.autoFillData) {
+//       setPendingAllotment(route.params.autoFillData);
+//     }
+//   }, [route.params?.autoFillData]);
+
+//   const dataToRender =
+//     stayType === "apartment" ? apartments :
+//       stayType === "commercial" ? apartments :   // ✅ ADD THIS
+//         tenants;
+
+//   const countsToRender =
+//     stayType === "apartment" ? apartmentCounts :
+//       stayType === "commercial" ? apartmentCounts : // ✅ ADD
+//         bedCounts;
+
+//   useEffect(() => {
+//     if (!modalVisible) {
+//       setIdProofFile("");
+//       setIdProofUri("");
+//       setIdPreviewHtml("");
+//       setIdPreviewVisible(false);
+//     }
+//   }, [modalVisible]);
+//   const makeRooms = (n) =>
+//     Array.from(
+//       { length: n === 1 ? 15 : 4 },
+//       (_, i) => `${n}${String(i + 1).padStart(2, "0")}`,
+//     );
+//   const floors = Array.from({ length: 15 }, (_, i) => {
+//     const floorNumber = i + 1;
+//     return { floor: `Floor ${floorNumber}`, rooms: makeRooms(floorNumber) };
+//   });
+
+//   // const dynamicFloors =
+//   // response_data?.building_layout?.map((f) => ({
+//   //   floor: `Floor ${f.floorNo}`,
+//   //   rooms: f.rooms.map(
+//   //     (r) => `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`
+//   //   ),
+//   // })) || floors;
+//   // const dynamicFloors = response_data?.building_layout
+//   // ? response_data.building_layout.map((f) => ({
+//   //     floor: `Floor ${f.floorNo}`,
+//   //     rooms: f.rooms.map((r) => ({
+//   //       roomLabel: `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`,
+//   //       beds: r.beds,
+//   //     })),
+//   //   }))
+//   // : [];
+//   // const stayType = response_data?.stay_type || "hostel";
+//   const stayType = response_data?.property_type || "hostel";
+//   const getUnits = (floor) => {
+//     if (stayType === "hostel") return floor.rooms || [];
+//     if (stayType === "apartment") return floor.flats || [];
+//     if (stayType === "commercial") return [floor];
+//     return [];
+//   };
+//   // const dynamicFloors = response_data?.building_layout
+//   //   ? response_data.building_layout.map((f) => {
+
+//   //       if (stayType === "hostel") {
+//   //         return {
+//   //           floor: `Floor ${f.floorNo}`,
+//   //           rooms: f.rooms.map((r) => ({
+//   //             roomLabel: `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`,
+//   //             beds: r.beds,
+//   //           })),
+//   //         };
+//   //       }
+
+//   //       if (stayType === "apartment") {
+//   //         return {
+//   //           floor: `Floor ${f.floorNo}`,
+//   //           flats: f.flats.map((fl, idx) => ({
+//   //             flatNo: `${f.floorNo}${String(idx + 1).padStart(2, "0")}`,
+//   //             bhk: fl.type || "1BHK",
+//   //           })),
+//   //         };
+//   //       }
+
+//   //       if (stayType === "commercial") {
+//   //         return {
+//   //           floor: `Floor ${f.floorNo}`,
+//   //           area: f.area,
+//   //         };
+//   //       }
+
+//   //       return {};
+//   //     })
+//   //   : [];
+
+//   const dynamicFloors =
+//     stayType === "commercial"
+//       ? (() => {
+//         const grouped = {};
+
+//         (response_data?.building_layout || []).forEach((item) => {
+//           if (!grouped[item.floorNo]) {
+//             grouped[item.floorNo] = [];
+//           }
+
+//           grouped[item.floorNo].push(item);
+//         });
+
+//         return Object.keys(grouped).map((floorNo) => ({
+//           floor: `Floor ${floorNo}`,
+//           units: grouped[floorNo].map((sec, idx) => ({
+//             id: idx + 1,
+//             label: `${sec.sectionNo ?? idx + 1}`,   // ✅ fallback
+//             display: `Section ${sec.sectionNo ?? idx + 1}`,
+//             area: sec.area_sqft,
+//           }))
+//         }));
+//       })()
+//       : response_data?.building_layout?.map((f) => {
+//         if (stayType === "hostel") {
+//           return {
+//             floor: `Floor ${f.floorNo}`,
+//             units: (f.rooms || []).map((r) => ({
+//               label: `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`,
+//               beds: r.beds,
+//             })),
+//           };
+//         }
+
+//         if (stayType === "apartment") {
+//           return {
+//             floor: `Floor ${f.floorNo}`,
+//             units: (f.flats || []).map((fl, idx) => ({
+//               label: `${f.floorNo}${String(idx + 1).padStart(2, "0")}`,
+//               type: fl?.bhk ? `${fl.bhk} BHK` : "Not Assigned",
+//             })),
+//           };
+//         }
+
+//         return { floor: `Floor ${f.floorNo}`, units: [] };
+//       }) || [];
+
+//   // const isOccupied = (floorLabel, room) => {
+//   //   const key = `${floorLabel}-${room}`;
+//   //   const count = bedCounts[key] ?? 0;
+//   //   return count > 0;
+//   // };
+//   // const isOccupied = (floorLabel, unit) => {
+//   // const key = `${floorLabel}-${unit}`;
+//   // const count = bedCounts[key] ?? 0;
+//   const isOccupied = (floorLabel, unitLabel) => {
+//     const key = `${floorLabel}-${unitLabel}`;
+
+//     const count =
+//       stayType === "hostel"
+//         ? bedCounts[key] ?? 0
+//         : apartmentCounts[key] ?? 0; // ✅ apartment + commercial
+
+//     return count > 0;
+//   };
+
+
+//   const getCount = (floorLabel, unitLabel) => {
+//     const key = `${floorLabel}-${unitLabel}`;
+
+//     return stayType === "hostel"
+//       ? bedCounts[key] ?? 0
+//       : apartmentCounts[key] ?? 0; // ✅ apartment + commercial
+//   };
+
+//   const getTileColor = (floorLabel, unitLabel) => {
+//     const c = getCount(floorLabel, unitLabel);
+
+//     if (filterMode === "occupied") return "#aaf8c5"; // light green
+//     if (filterMode === "empty") return "#f28f8f";    // light red
+//     if (filterMode === null) return "#c0b4f3";       // light violet
+
+//     if (c === 0) return "#f28f8f";     // empty
+//     if (c >= 4) return "#aaf8c5";      // full
+//     return "#FEF3C7";                  // partial light yellow
+//   };
+//   const snap = cardWidth + SPACING;
+//   const handleSelectFloor = (idx) => {
+//     setActiveIndex(idx);
+//     sliderRef.current?.scrollTo({
+//       x: idx * (cardWidth + SPACING),
+//       animated: true,
+//     });
+//   };
+//   useEffect(() => {
+//     const SIDE_BUTTON_HEIGHT = 40;
+//     const SIDE_BUTTON_GAP = 8;
+//     const offset = Math.max(
+//       0,
+//       idxToOffset(activeIndex, SIDE_BUTTON_HEIGHT, SIDE_BUTTON_GAP) - 60,
+//     );
+//     sidebarRef.current?.scrollTo({ y: offset, animated: true });
+//   }, [activeIndex]);
+//   const idxToOffset = (idx, h, g) => idx * (h + g);
+
+//   // const totalRooms = dynamicFloors.reduce((sum, f) => sum + f.rooms.length, 0);
+//   // const totalRooms = dynamicFloors.reduce((sum, f) => {
+
+//   //   if (stayType === "hostel") {
+//   //     return sum + (f.rooms?.length || 0);
+//   //   }
+
+//   //   if (stayType === "apartment") {
+//   //     return sum + (f.flats?.length || 0);
+//   //   }
+
+//   //   if (stayType === "commercial") {
+//   //     return sum + 1;
+//   //   }
+
+//   //   return sum;
+
+//   // }, 0);
+
+//   // const occupiedRooms = dynamicFloors.reduce(
+//   //   (sum, f) => sum + f.rooms.filter((r) => isOccupied(f.floor, r)).length,
+//   //   0,
+//   // );
+//   // const emptyRooms = totalRooms - occupiedRooms;
+//   const totalRooms = dynamicFloors.reduce(
+//     (sum, f) => sum + (f.units?.length || 0),
+//     0
+//   );
+
+//   const occupiedRooms = dynamicFloors.reduce(
+//     (sum, f) =>
+//       sum +
+//       (f.units || []).filter((u) =>
+//         isOccupied(f.floor, u.label)
+//       ).length,
+//     0
+//   );
+//   const handleSave = async (row, idx) => {
+//     try {
+//       const vv = rowEditValues[idx] || {};
+
+//       const propertyType = stayType?.trim().toLowerCase(); // ✅ FIXED
+
+//       const phone = vv.phone || row.phone;
+//       console.log("FINAL TYPE:", propertyType);
+//       console.log("FINAL URL:", url);
+//       let url = "";
+
+//       if (propertyType === "hostel") {
+//         url = `${BASE_URL}/api/updatehostel/${phone}/`;
+//       }
+//       else if (propertyType === "apartment") {
+//         url = `${BASE_URL}/api/updateapartment/${phone}/`;
+//       }
+//       else if (propertyType === "commercial") {
+//         url = `${BASE_URL}/api/updatecommercial/${phone}/`;
+//       }
+//       else {
+//         alert(`Invalid property type: "${propertyType}"`);
+//         console.log("DEBUG stayType:", stayType);
+//         return;
+//       }
+
+//       const rawPayload = { ...row, ...vv };
+
+//       const payload = {
+//         name: rawPayload.name,
+//         phone: rawPayload.phone,
+//         phone: rawPayload.phone,
+//         bed: Number(rawPayload.bed),
+//         floor: rawPayload.floor ? Number(rawPayload.floor) : null,
+//         roomno: rawPayload.roomno ? Number(rawPayload.roomno) : null,
+//         rent: rawPayload.rent ? Number(rawPayload.rent) : 0,
+//         checkIn: rawPayload.checkIn,
+//         checkOut: rawPayload.checkOut,
+//       };
+
+//       console.log("FINAL URL:", url);
+//       console.log("PAYLOAD:", payload);
+
+//       const response = await fetch(url, {
+//         method: "PATCH",
+//         headers: {
+//           "Content-Type": "application/json",
+//         },
+//         body: JSON.stringify(payload),
+//       });
+
+//       const data = await response.json();
+//       console.log("BACKEND ERROR:", data);
+
+//       if (!response.ok) {
+//         throw new Error(data.message || "Something went wrong");
+//       }
+
+//       alert("Saved successfully ✅");
+
+//     } catch (error) {
+//       console.error(error);
+//       alert("Save failed ❌");
+//     }
+//   };
+//   const emptyRooms = totalRooms - occupiedRooms;
+//   // const openTenantModal = (floorLabel, room) => {
+//   //   setSelectedFloor(floorLabel);
+//   //   setSelectedRoom(room);
+//   const openTenantModal = (floorLabel, room) => {
+//     // console.log("✅ Clicked Floor:", floorLabel);
+//     // console.log("✅ Clicked Room:", room);
+
+//     setSelectedFloor(String(floorLabel || ""));
+//     setSelectedRoom(String(room || ""));
+
+//     const current = getCount(floorLabel, room);
+//     setBedNumber(Math.min(4, current + 1));
+
+//     if (pendingAllotment) {
+//       setTenantName(pendingAllotment.name || "");
+//       setContactNumber(pendingAllotment.phone || "");
+//       settenantPhone(pendingAllotment.phone || "");
+//       setCheckIn(pendingAllotment.checkIn || "");
+//       setCheckOut(pendingAllotment.checkOut || "");
+//       setMonthlyRent("");
+//     } else {
+//       setTenantName("");
+//       setContactNumber("");
+//       settenantPhone("");
+//       setMonthlyRent("");
+//       setCheckIn("");
+//       setCheckOut("");
+//     }
+
+//     setIdProofFile("");
+//     setIdProofUri("");
+//     setIdPreviewHtml("");
+//     setIdPreviewVisible(false);
+//     setTouchedName(false);
+//     setTouchedPhone(false);
+//     setTouchedEmail(false);
+//     setTouchedRent(false);
+//     setModalVisible(true);
+//   };
+//   const isValidName = (name) => /^[A-Za-z\s]+$/.test(name.trim());
+//   const isValidPhone = (phone) => /^\d{10,11}$/.test(phone.trim());
+//   const isValidEmail = (mail) =>
+//     mail.trim().length === 0 || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail.trim());
+//   const isFormValid = () => {
+//     return (
+//       isValidName(tenantName) &&
+//       isValidPhone(contactNumber) &&
+//       monthlyRent.trim().length > 0 &&
+//       (idProofUri || idOpenUri) &&
+//       //       bedNumber >= 1 &&
+//       bedNumber <= 4
+//     );
+//   };
+//   const addTenant = () => {
+//     console.log("ADDING TENANT", {
+//       tenantName,
+//       contactNumber,
+//       tenantPhone,
+//       monthlyRent,
+//       idProofUri,
+//     });
+//     if (!selectedFloor || !selectedRoom) {
+//       setModalVisible(false);
+//       return;
+//     }
+//     if (!isFormValid()) {
+//       return;
+//     }
+//     const key = `${selectedFloor}-${selectedRoom}`;
+//     // setTenants((prev) => {
+//     //   const list = prev[key] ?? [];
+//     //   const nextList = [
+//     //     ...list,
+//     //     {
+//     //       name: tenantName.trim(),
+//     //       phone: contactNumber.trim(),
+//     //       //     //       bed: bedNumber,
+//     //       rent: monthlyRent.trim(),
+//     //       checkIn: checkIn.trim(),
+//     //       checkOut: checkOut.trim(),
+//     //       idUri: idOpenUri || idProofUri,
+//     //     },
+//     //   ];
+//     //   return { ...prev, [key]: nextList };
+//     // });
+//     // setBedCounts((prev) => {
+//     //   const next = Math.min(4, (prev[key] ?? 0) + 1);
+//     //   return { ...prev, [key]: next };
+//     // });
+//     const newTenant = {
+//       name: tenantName.trim(),
+//       phone: contactNumber.trim(),
+//       //       bed: bedNumber,
+//       rent: monthlyRent.trim(),
+//       checkIn: checkIn.trim(),
+//       checkOut: checkOut.trim(),
+//       idUri: idOpenUri || idProofUri,
+//     };
+
+//     if (stayType === "apartment") {
+//       setApartments((prev) => {
+//         const list = prev[key] ?? [];
+//         return {
+//           ...prev,
+//           [key]: [...list, newTenant],
+//         };
+//       });
+
+//       setApartmentCounts((prev) => {
+//         const next = Math.min(4, (prev[key] ?? 0) + 1);
+//         return { ...prev, [key]: next };
+//       });
+//     } else {
+//       setTenants((prev) => {
+//         const list = prev[key] ?? [];
+//         return {
+//           ...prev,
+//           [key]: [...list, newTenant],
+//         };
+//       });
+
+//       setBedCounts((prev) => {
+//         const next = Math.min(4, (prev[key] ?? 0) + 1);
+//         return { ...prev, [key]: next };
+//       });
+//     }
+//     setIdProofFile("");
+//     setIdProofUri("");
+//     setIdOpenUri("");
+//     setIdPreviewVisible(false);
+//     setShowBottomViewId(false);
+//     setModalVisible(false);
+//   };
+//   const removeTenant = (floorLabel, room, index) => {
+//     const key = `${floorLabel}-${room}`;
+//     setTenants((prev) => {
+//       const list = prev[key] ?? [];
+//       const nextList = list.filter((_, i) => i !== index);
+//       return { ...prev, [key]: nextList };
+//     });
+//     setBedCounts((prev) => {
+//       const next = Math.max(0, (prev[key] ?? 0) - 1);
+//       return { ...prev, [key]: next };
+//     });
+//   }; const getTotalBeds = (floorLabel, roomLabel) => {
+//     const floor = dynamicFloors.find((f) => f.floor === floorLabel);
+//     const unit = floor?.units.find((u) => u.label === roomLabel);
+//     return unit?.beds ?? 0;
+//   };
+//   //   const getTotalBeds = (floorLabel, roomLabel) => {
+//   //   const floor = dynamicFloors.find((f) => f.floor === floorLabel);
+//   //   const room = floor?.rooms.find((r) => r.roomLabel === roomLabel);
+//   //   return room?.beds ?? 0;
+//   // };
+//   // console.log("Selected Floor:", selectedFloor);
+//   // console.log("Selected Room:", selectedRoom);
+//   // const saveTenant = async () => {
+//   //   try {
+//   //         // console.log("🚀 Sending:", selectedFloor, selectedRoom); // DEBUG
+
+//   //     const formData = new FormData();
+
+//   //     formData.append("name", tenantName);
+//   //     formData.append("phone", contactNumber);
+//   //     //   //     formData.append("bed", bedNumber);
+//   //     formData.append("rent", monthlyRent);
+//   //     formData.append("checkIn", checkIn);
+//   //     formData.append("checkOut", checkOut);
+//   // //  const floorNumber = selectedFloor
+//   // //   ? selectedFloor.replace("Floor ", "")
+//   // //   : "";
+//   // // let floorNumber = "";
+
+//   // // if (selectedFloor !== null && selectedFloor !== undefined) {
+//   // //   if (typeof selectedFloor === "string") {
+//   // //     floorNumber = selectedFloor.replace("Floor ", "");
+//   // //   } else {
+//   // //     floorNumber = selectedFloor.toString(); // 👈 IMPORTANT
+//   // //   }
+//   // // }
+
+//   // // formData.append("floor", floorNumber);
+//   // // formData.append("owner_phone", ownerPhone); // ✅ correct key
+//   // console.log("Selected Floor:", selectedFloor);
+
+//   // const floorNumber = selectedFloor
+//   //   ? parseInt(selectedFloor.toString().replace("Floor ", ""))
+//   //   : null;
+
+//   // if (floorNumber !== null && !isNaN(floorNumber)) {
+//   //   formData.append("floor", floorNumber);
+//   // }
+
+//   // // formData.append("roomno", parseInt(selectedRoom));
+//   // if (stayType === "hostel") {
+//   //   formData.append("roomno", parseInt(selectedRoom));
+//   // }
+
+//   // else if (stayType === "apartment") {
+//   //   formData.append("flatno", selectedRoom); // keep as string (like 101, 102)
+//   // }
+
+//   // else if (stayType === "commercial") {
+//   //   formData.append("sectionNo", selectedRoom); // ✅ send number instead of text
+//   // }
+//   // formData.append("owner_phone", ownerPhone);
+
+
+//   // // formData.append("floor", floorNumber);   // ✅ now sends 1
+//   // // formData.append("roomno", parseInt(selectedRoom));
+//   // // formData.append("ownerPhone")
+
+//   //     if (idProofUri) {
+//   //       formData.append("idUri", {
+//   //         uri: idProofUri,
+//   //         name: "idproof.jpg",
+//   //         type: "image/jpeg",
+//   //       });
+//   //     }
+
+//   //     const response = await fetch(
+//   //       "http://192.168.1.29:8000/api/tenentbeds/",
+//   //       {
+//   //         method: "POST",
+//   //         body: formData,
+//   //       }
+//   //     );
+//   // const res1 = await fetch(
+//   //       "http://192.168.1.29:8000/api/apartmentbeds/",
+//   //        {
+//   //         method: "POST",
+//   //         body: formData,
+//   //       }
+//   //     );
+//   //     const data = await response.json();
+//   //     console.log("Tenant saved:", data);
+//   // addTenant(); 
+//   //   } catch (error) {
+//   //     console.log("Error saving tenant:", error);
+//   //   }
+//   // };
+
+
+//   const saveTenant = async () => {
+//     try {
+//       const formData = new FormData();
+
+//       formData.append("name", tenantName);
+//       formData.append("phone", contactNumber);
+//       //       formData.append("bed", bedNumber);
+//       formData.append("rent", monthlyRent);
+//       formData.append("checkIn", checkIn);
+//       formData.append("checkOut", checkOut);
+
+
+
+//       const floorNumber = selectedFloor
+//         ? parseInt(selectedFloor.toString().replace("Floor ", ""))
+//         : null;
+
+//       if (floorNumber !== null && !isNaN(floorNumber)) {
+//         formData.append("floor", floorNumber);
+//       }
+
+//       // ✅ TYPE BASED DATA
+//       if (stayType === "hostel") {
+//         formData.append("roomno", parseInt(selectedRoom));
+//       }
+//       else if (stayType === "apartment") {
+//         formData.append("flatno", selectedRoom);
+//       }
+
+//       else if (stayType === "commercial") {
+//         formData.append("sectionNo", selectedRoom); // ✅ correct
+//       }
+
+
+//       formData.append("owner_phone", ownerPhone);
+
+//       if (idProofUri) {
+//         formData.append("idUri", {
+//           uri: idProofUri,
+//           name: "idproof.jpg",
+//           type: "image/jpeg",
+//         });
+//       }
+
+//       // 🔥 SELECT API BASED ON TYPE
+//       let url = "";
+
+//       if (stayType === "hostel") {
+//         url = `${BASE_URL}/api/tenentbeds/`;
+//       }
+//       else if (stayType === "apartment") {
+
+//         url = `${BASE_URL}/api/apartmentbeds/`;
+//       }
+//       else if (stayType === "commercial") {
+//         url = `${BASE_URL}/api/commercialbeds/`; // or your commercial API
+//       }
+
+//       console.log("🚀 Hitting API:", url);
+
+//       // ✅ ONLY ONE API CALL
+//       const response = await fetch(url, {
+//         method: "POST",
+//         body: formData,
+//       });
+
+//       const data = await response.json();
+//       console.log("Tenant saved:", data);
+
+//       if (pendingAllotment?.requestId) {
+//         try {
+//           await fetch(`${BASE_URL}/api/update_request_status/`, {
+//             method: "POST",
+//             headers: { "Content-Type": "application/json" },
+//             body: JSON.stringify({
+//               id: pendingAllotment.requestId,
+//               status: "accepted",
+//             }),
+//           });
+//         } catch (err) {
+//           console.error("Error updating request status:", err);
+//         }
+//       }
+
+//       addTenant();
+
+//       if (pendingAllotment) {
+//         setPendingAllotment(null);
+//         navigation.navigate("OwnerNotificationScreen", { phone });
+//       }
+//     } catch (error) {
+//       console.log("Error saving tenant:", error);
+//     }
+//   };
+//   return (
+//     <ScrollView style={styles.container} keyboardShouldPersistTaps="always">
+//       {/* Header */}
+//       <Text style={styles.header}>{dashboardData?.name}</Text>
+//       <Text>{dashboardData?.phone}</Text>
+//       <View
+//         style={{
+//           flexDirection: "row",
+//           justifyContent: "space-between",
+//           alignItems: "center",
+//           paddingHorizontal: 10,
+//           paddingTop: 20,
+//           paddingBottom: 15,
+
+//           borderBottomWidth: 1,
+//           borderBottomColor: "#eee",
+//         }}
+//       >
+//         <View>
+//           <Text
+//             style={{
+//               fontSize: 22,
+//               fontWeight: "bold",
+//               color: "#111",
+//             }}
+//           >
+//             Hello {ownerName}
+//           </Text>
+//         </View>
+
+//         <TouchableOpacity
+//           onPress={() =>
+//             navigation.navigate("OwnerNotificationScreen", {
+//               phone: phone,
+//             })
+//           }
+//           style={{ position: "relative" }}
+//         >
+//           <Ionicons name="notifications-outline" size={28} color="#333" />
+
+//           {pendingCount > 0 && (
+//             <View
+//               style={{
+//                 position: "absolute",
+//                 top: -10,
+//                 right: -6,
+//                 backgroundColor: "#ff3b30",
+//                 borderRadius: 20,
+//                 minWidth: 18,
+//                 height: 20,
+//                 justifyContent: "center",
+//                 alignItems: "center",
+//                 paddingHorizontal: 2,
+//               }}
+//             >
+//               <Text
+//                 style={{
+//                   color: "#fff",
+//                   fontSize: 10,
+//                   fontWeight: "bold",
+//                 }}
+//               >
+//                 {pendingCount}
+//               </Text>
+//             </View>
+//           )}
+//         </TouchableOpacity>
+//       </View>
+//       {/* <Text style={styles.welcome}>Hello, {ownerName}</Text> */}
+
+//       <View style={styles.statsContainer}>
+//         <TouchableOpacity
+//           style={[styles.statBox, filterMode === null && { backgroundColor: "#E0E7FF", borderColor: COLORS.PRIMARY, borderWidth: 1 }]}
+//           onPress={() => setFilterMode(null)}
+//         >
+//           <Ionicons name="apps" size={22} color={COLORS.PRIMARY} />
+//           <Text style={styles.statNumber}>{totalRooms}</Text>
+//           <Text style={styles.statLabel}>Total</Text>
+//         </TouchableOpacity>
+
+//         <TouchableOpacity
+//           style={[styles.statBox, filterMode === "occupied" && { backgroundColor: "#DCFCE7", borderColor: COLORS.SUCCESS, borderWidth: 1 }]}
+//           onPress={() => setFilterMode("occupied")}
+//         >
+//           <Ionicons name="people" size={22} color={COLORS.SUCCESS} />
+//           <Text style={styles.statNumber}>{occupiedRooms}</Text>
+//           <Text style={styles.statLabel}>Occupied</Text>
+//         </TouchableOpacity>
+
+//         <TouchableOpacity
+//           style={[styles.statBox, filterMode === "empty" && { backgroundColor: "#FEE2E2", borderColor: COLORS.ERROR, borderWidth: 1 }]}
+//           onPress={() => setFilterMode("empty")}
+//         >
+//           <Ionicons name="bed" size={22} color={COLORS.ERROR} />
+//           <Text style={styles.statNumber}>{emptyRooms}</Text>
+//           <Text style={styles.statLabel}>Vacant</Text>
+//         </TouchableOpacity>
+//       </View>
+
+//       <View style={styles.sectionHeader}>
+//         <Text style={styles.sectionTitle}>Building View</Text>
+//         <View style={[styles.legendRow, { marginTop: 0 }]}>
+//           <View style={[styles.legendDot, { backgroundColor: "#2ECC71" }]} />
+//           <Text style={styles.legendText}>Full</Text>
+//           <View style={[styles.legendDot, { backgroundColor: "#F1C40F" }]} />
+//           <Text style={styles.legendText}>Partial</Text>
+//           <View style={[styles.legendDot, { backgroundColor: "#E74C3C" }]} />
+//           <Text style={styles.legendText}>Empty</Text>
+//         </View>
+//       </View>
+
+//       <View style={styles.contentRow}>
+//         <View style={styles.sidebar}>
+//           <ScrollView
+//             ref={sidebarRef}
+//             style={styles.sidebarScroll}
+//             contentContainerStyle={styles.sidebarScrollContent}
+//             showsVerticalScrollIndicator
+//           >
+//             {dynamicFloors.map((f, idx) => (
+//               <TouchableOpacity
+//                 key={idx}
+//                 style={[
+//                   styles.sideButton,
+//                   activeIndex === idx && styles.sideButtonActive,
+//                 ]}
+//                 onPress={() => handleSelectFloor(idx)}
+//                 activeOpacity={0.8}
+//               >
+//                 <Text
+//                   style={[
+//                     styles.sideButtonText,
+//                     activeIndex === idx && styles.sideButtonTextActive,
+//                   ]}
+//                 >
+//                   {idx + 1}
+//                 </Text>
+//               </TouchableOpacity>
+//             ))}
+//           </ScrollView>
+//         </View>
+
+//         <ScrollView
+//           ref={sliderRef}
+//           horizontal
+//           snapToInterval={snap}
+//           decelerationRate="fast"
+//           scrollEventThrottle={8}
+//           keyboardShouldPersistTaps="always"
+//           onScroll={(e) => {
+//             const x = e.nativeEvent.contentOffset.x;
+//             const idx = Math.max(
+//               0,
+//               Math.min(
+//                 dynamicFloors.length - 1,
+//                 Math.round(x / (cardWidth + SPACING)),
+//               ),
+//             );
+//             setActiveIndex(idx);
+//           }}
+//           showsHorizontalScrollIndicator={false}
+//           style={styles.slider}
+//           contentContainerStyle={{ paddingLeft: SPACING, paddingRight: 6 }}
+//           onMomentumScrollEnd={(e) => {
+//             const x = e.nativeEvent.contentOffset.x;
+//             const idx = Math.max(
+//               0,
+//               Math.min(
+//                 dynamicFloors.length - 1,
+//                 Math.round((x - SPACING) / (cardWidth + SPACING)),
+//               ),
+//             );
+//             setActiveIndex(idx);
+//           }}
+//         >
+//           {dynamicFloors.map((item, index) => (
+//             <View
+//               style={[
+//                 styles.card,
+//                 {
+//                   width: cardWidth,
+//                   marginRight: index === dynamicFloors.length - 1 ? 0 : SPACING,
+//                   height: CARD_HEIGHT,
+//                 },
+//               ]}
+//               key={index}
+//               onLayout={(e) => {
+//                 if (!sliderWidth) {
+//                   setSliderWidth(e.nativeEvent.layout.width);
+//                 }
+//               }}
+//             >
+//               <Animated.Text
+//                 style={[
+//                   styles.floorTitle,
+//                   { opacity: floorPulse, transform: [{ scale: floorScale }] },
+//                   activeIndex === index && {
+//                     color: "#0a7ea4",
+//                     backgroundColor: "#E6F7ED",
+//                     borderWidth: 1,
+//                     borderColor: "#0a7ea4",
+//                     paddingHorizontal: 10,
+//                     paddingVertical: 4,
+//                     borderRadius: 10,
+//                     alignSelf: "center",
+//                   },
+//                 ]}
+//               >
+//                 {item.floor}
+//               </Animated.Text>
+//               <ScrollView style={styles.cardScroll} nestedScrollEnabled showsVerticalScrollIndicator scrollEventThrottle={8} >
+//                 {/* <View style={styles.roomGrid}>
+
+// {stayType === "hostel" &&
+//   (filterMode === "occupied"
+//     ? item.rooms.filter((r) => isOccupied(item.floor, r.roomLabel))
+//     : filterMode === "empty"
+//       ? item.rooms.filter((r) => getCount(item.floor, r.roomLabel) < 4)
+//       : item.rooms
+//   ).map((room, i) => (
+//     <TouchableOpacity
+//       key={room.roomLabel}
+//       style={[
+//         styles.roomBox,
+//         { backgroundColor: getTileColor(item.floor, room.roomLabel) },
+//       ]}
+//       onPress={() => openTenantModal(item.floor, room.roomLabel)}
+//     >
+//       <Text style={styles.roomNumber}>{room.roomLabel}</Text>
+//     </TouchableOpacity>
+// ))}
+
+// {stayType === "apartment" &&
+//   item.flats.map((flat, i) => (
+//     <TouchableOpacity
+//       key={flat.flatNo}
+//       style={[
+//         styles.roomBox,
+//         { backgroundColor: getTileColor(item.floor, flat.flatNo) },
+//       ]}
+//       onPress={() => openTenantModal(item.floor, flat.flatNo)}
+//     >
+//       <Text style={styles.roomNumber}>{flat.flatNo}</Text>
+//       <Text style={styles.roomText}>{flat.bhk}</Text>
+//     </TouchableOpacity>
+// ))}
+
+// {stayType === "commercial" && (
+//   <TouchableOpacity
+//     style={[
+//       styles.roomBox,
+//       { backgroundColor: getTileColor(item.floor) },
+//     ]}
+//     onPress={() => openTenantModal(item.floor, item.area)}
+//   >
+//     <Text style={styles.roomNumber}>{item.area} sq yd</Text>
+//   </TouchableOpacity>
+// )}
+
+// </View>
+// <View style={styles.roomGrid}>
+//   {(item.units || []).map((unit, i) => (
+//     <TouchableOpacity
+//       key={unit.label}
+//       style={[
+//         styles.roomBox,
+//         { backgroundColor: getTileColor(item.floor, unit.label) },
+//       ]}
+//       onPress={() => openTenantModal(item.floor, unit.label)}
+//     >
+//       <Text style={styles.roomNumber}>{unit.label}</Text>
+
+//       {stayType === "apartment" && (
+//         <Text style={styles.roomText}>{unit.type}</Text>
+//       )}
+//     </TouchableOpacity>
+//   ))}
+// </View> */}
+//                 <View style={styles.roomGrid}>
+//                   {(item.units || [])
+//                     .filter((unit) => {
+//                       const count = getCount(item.floor, unit.label);
+
+//                       if (filterMode === "occupied") return count > 0;
+//                       if (filterMode === "empty") return count === 0;
+//                       return true; // total
+//                     })
+//                     .map((unit, i) => (
+//                       <TouchableOpacity
+//                         key={unit.label || i}
+//                         style={[
+//                           styles.roomBox,
+//                           { backgroundColor: getTileColor(item.floor, unit.label) },
+//                         ]}
+//                         // onPress={() => openTenantModal(item.floor, unit.id)}
+//                         onPress={() => openTenantModal(item.floor, unit.label)}
+//                       // onPress={() => openTenantModal(item.floorNo, unit.roomNo)}
+//                       >
+//                         {stayType === "hostel" && (
+//                           <>
+//                             <Text style={styles.roomNumber}>{unit.label}</Text>
+//                             <Text style={styles.roomText}>
+//                               {getCount(item.floor, unit.label)}/{unit.beds} beds
+//                             </Text>
+//                           </>
+//                         )}
+
+//                         {stayType === "apartment" && (
+//                           <>
+//                             <Text style={styles.roomNumber}>{unit.label}</Text>
+//                             <Text style={styles.roomText}>{unit.type}</Text>
+//                           </>
+//                         )}
+
+//                         {/* {stayType === "commercial" && (
+//   <Text style={styles.roomNumber}>{unit.label}</Text>
+// )} */}
+//                         {stayType === "commercial" && (
+//                           <>
+//                             <Text style={styles.roomNumber}>Section {unit.label}</Text>
+//                             <Text style={styles.roomText}>{unit.area} sq.ft</Text>
+//                           </>
+//                         )}
+//                         <View style={styles.controlsRow}>
+//                           <TouchableOpacity
+//                             style={styles.controlBtn}
+//                             onPress={() => openTenantModal(item.floor, unit.label)}
+//                           >
+//                             <Text style={styles.controlText}>+</Text>
+//                           </TouchableOpacity>
+//                         </View>
+//                       </TouchableOpacity>
+//                     ))}
+//                 </View>
+//               </ScrollView>
+//             </View>
+//           ))}
+//         </ScrollView>
+//       </View>
+//       <Modal transparent={false} visible={modalVisible} animationType="slide" presentationStyle="fullScreen">
+//         <View style={[styles.modalOverlay, { backgroundColor: COLORS.WHITE }]}>
+//           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+//             <View style={styles.modalCard}>
+//                 <View style={styles.modalHeaderBar}>
+//                   <View style={{ flex: 1 }}>
+//                     <Text style={[styles.modalTitle, { fontSize: 22, color: COLORS.WHITE, fontWeight: "800" }]}>
+//                       {selectedRoom ? (stayType === "hostel" ? `Room ${selectedRoom}` : stayType === "apartment" ? `Flat ${selectedRoom}` : `Section ${selectedRoom}`) : "Registration"}
+//                     </Text>
+//                     <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+//                       <Ionicons name="layers-outline" size={14} color="rgba(255,255,255,0.8)" />
+//                       <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600", marginLeft: 4 }}>
+//                         {selectedFloor ? (String(selectedFloor).includes("Floor") ? selectedFloor : `Floor ${selectedFloor}`) : "No Floor"}
+//                       </Text>
+//                       {ownerPhone && (
+//                         <>
+//                           <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.4)", marginHorizontal: 8 }} />
+//                           <Ionicons name="mail-outline" size={14} color="rgba(255,255,255,0.8)" />
+//                           <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600", marginLeft: 4 }}>{ownerPhone}</Text>
+//                         </>
+//                       )}
+//                     </View>
+//                   </View>
+//                   <TouchableOpacity
+//                     style={[styles.modalCloseBtn, { backgroundColor: "rgba(255,255,255,0.2)" }]}
+//                     onPress={() => setModalVisible(false)}
+//                   >
+//                     <Ionicons name="close" size={24} color={COLORS.WHITE} />
+//                   </TouchableOpacity>
+//                 </View>
+
+//               <ScrollView
+//                 style={styles.modalContentScroll}
+//                 contentContainerStyle={{ paddingBottom: 40 }}
+//                 nestedScrollEnabled
+//                 keyboardShouldPersistTaps="always"
+//               >
+//                 <View style={[styles.modalStatsCards, { paddingHorizontal: 0, paddingTop: 8 }]}>
+//                   <View style={[styles.statBadge, { backgroundColor: "#F3E8FF" }]}>
+//                     <Text style={[styles.statBadgeLabel, { color: COLORS.PRIMARY }]}>Status</Text>
+//                     <Text style={[styles.statBadgeValue, { color: COLORS.PRIMARY }]}>
+//                       {getCount(selectedFloor ?? "", selectedRoom ?? "") > 0 ? "Occupied" : "Vacant"}
+//                     </Text>
+//                   </View>
+//                   <View style={[styles.statBadge, { backgroundColor: "#DCFCE7" }]}>
+//                     <Text style={[styles.statBadgeLabel, { color: COLORS.SUCCESS }]}>Available</Text>
+//                     <Text style={[styles.statBadgeValue, { color: COLORS.SUCCESS }]}>
+//                       {stayType === "hostel" ? 
+//                         `${Math.max(0, getTotalBeds(selectedFloor ?? "", selectedRoom ?? "") - getCount(selectedFloor ?? "", selectedRoom ?? ""))} Beds` : 
+//                         "1 Unit"}
+//                     </Text>
+//                   </View>
+//                 </View>
+//                 <View style={styles.modalSectionHeader}>
+//                   <View
+//                     style={{
+//                       flexDirection: "row",
+//                       alignItems: "center",
+//                       justifyContent: "space-between",
+//                     }}
+//                   >
+//                     <Text style={styles.modalSectionTitle}>
+//                       Current Tenants
+//                     </Text>
+//                     <TouchableOpacity
+//                       onPress={() => setTenantsExpanded((v) => !v)}
+//                       style={{ padding: 6 }}
+//                     >
+//                       <Ionicons
+//                         name={
+//                           tenantsExpanded
+//                             ? "chevron-up-outline"
+//                             : "chevron-down-outline"
+//                         }
+//                         size={20}
+//                         color="#111"
+//                       />
+//                     </TouchableOpacity>
+//                   </View>
+//                 </View>
+//                 {tenantsExpanded && (
+//                   <>
+//                     {((stayType === "hostel" ? tenants : apartments)[`${selectedFloor}-${selectedRoom}`] ?? []).map((t, idx) => (
+//                     <View key={idx} style={styles.tenantCard}>
+//                       <View style={{ flex: 1 }}>
+//                         {!(editAll || rowEditIndex === idx) ? (
+//                           <View>
+//                             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+//                               <Text style={styles.tenantName}>{t.name}</Text>
+//                               <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(95, 37, 159, 0.05)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+//                                 <Text style={{ fontSize: 11, fontWeight: "700", color: COLORS.PRIMARY }}>Bed {t.bed}</Text>
+//                               </View>
+//                             </View>
+
+//                             <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 8, gap: 12 }}>
+//                               <TouchableOpacity
+//                                 onPress={() => {
+//                                   const tel = `tel:${t.phone}`;
+//                                   Linking.openURL(tel).catch(() => { });
+//                                 }}
+//                                 style={{ flexDirection: "row", alignItems: "center" }}
+//                               >
+//                                 <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "rgba(39, 174, 96, 0.1)", alignItems: "center", justifyContent: "center", marginRight: 6 }}>
+//                                   <Ionicons name="call" size={12} color={COLORS.SUCCESS} />
+//                                 </View>
+//                                 <Text style={[styles.tenantMeta, { color: COLORS.SUCCESS, fontWeight: "700" }]}>{t.phone}</Text>
+//                               </TouchableOpacity>
+
+//                               {!!t.rent && (
+//                                 <View style={{ flexDirection: "row", alignItems: "center" }}>
+//                                   <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "rgba(95, 37, 159, 0.1)", alignItems: "center", justifyContent: "center", marginRight: 6 }}>
+//                                     <Ionicons name="cash" size={12} color={COLORS.PRIMARY} />
+//                                   </View>
+//                                   <Text style={[styles.tenantMeta, { color: COLORS.PRIMARY, fontWeight: "700" }]}>₹{t.rent}</Text>
+//                                 </View>
+//                               )}
+//                             </View>
+
+//                             {(t.checkIn || t.checkOut) && (
+//                               <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, gap: 12 }}>
+//                                 {!!t.checkIn && (
+//                                   <View style={{ flexDirection: "row", alignItems: "center" }}>
+//                                     <Ionicons name="calendar-outline" size={12} color={COLORS.TEXT_LIGHT} />
+//                                     <Text style={[styles.tenantMeta, { marginLeft: 4, fontSize: 11 }]}>In: {t.checkIn}</Text>
+//                                   </View>
+//                                 )}
+//                                 {!!t.checkOut && (
+//                                   <View style={{ flexDirection: "row", alignItems: "center" }}>
+//                                     <Ionicons name="calendar-outline" size={12} color={COLORS.TEXT_LIGHT} />
+//                                     <Text style={[styles.tenantMeta, { marginLeft: 4, fontSize: 11 }]}>Out: {t.checkOut}</Text>
+//                                   </View>
+//                                 )}
+//                               </View>
+//                             )}
+//                           </View>
+//                         ) : (
+//                           <View style={{ marginTop: 4 }}>
+//                             <View style={[styles.inputGroup, { marginBottom: 12 }]}>
+//                               <Text style={[styles.inputLabel, { fontSize: 11 }]}>Full Name</Text>
+//                               <View style={[styles.inputWrapper, { height: 44, borderRadius: 12, backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB" }]}>
+//                                 <Ionicons name="person-outline" size={18} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                                 <TextInput
+//                                   value={editAll ? (editValues[idx]?.name ?? t.name) : (rowEditValues[idx]?.name ?? t.name)}
+//                                   onChangeText={(val) => {
+//                                     const sanitized = val.replace(/[^A-Za-z\s]/g, "");
+//                                     if (editAll) {
+//                                       setEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), name: sanitized } }));
+//                                     } else {
+//                                       setRowEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), name: sanitized } }));
+//                                     }
+//                                   }}
+//                                   placeholder="Name"
+//                                   style={[styles.modernInput, { fontSize: 14 }]}
+//                                   autoCapitalize="words"
+//                                 />
+//                               </View>
+//                             </View>
+
+//                             <View style={[styles.inputGroup, { marginBottom: 12 }]}>
+//                               <Text style={[styles.inputLabel, { fontSize: 11 }]}>Phone Number</Text>
+//                               <View style={[styles.inputWrapper, { height: 44, borderRadius: 12, backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB" }]}>
+//                                 <Ionicons name="call-outline" size={18} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                                 <TextInput
+//                                   value={editAll ? (editValues[idx]?.phone ?? t.phone) : (rowEditValues[idx]?.phone ?? t.phone)}
+//                                   onChangeText={(val) => {
+//                                     const digits = val.replace(/[^0-9]/g, "").slice(0, 11);
+//                                     if (editAll) { setEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), phone: digits } })); }
+//                                     else { setRowEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), phone: digits } })); }
+//                                   }}
+//                                   placeholder="Phone"
+//                                   style={[styles.modernInput, { fontSize: 14 }]}
+//                                   keyboardType="phone-pad"
+//                                   maxLength={11}
+//                                 />
+//                               </View>
+//                             </View>
+
+//                             <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+//                               <View style={{ flex: 1 }}>
+//                                 <Text style={[styles.inputLabel, { fontSize: 11 }]}>phone</Text>
+//                                 <View style={[styles.inputWrapper, { height: 44, borderRadius: 12, backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB" }]}>
+//                                   <TextInput
+//                                     value={editAll ? (editValues[idx]?.phone ?? t.phone ?? "") : (rowEditValues[idx]?.phone ?? t.phone ?? "")}
+//                                     onChangeText={(val) => {
+//                                       const v = val.trim();
+//                                       if (editAll) { setEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), phone: v } })); }
+//                                       else { setRowEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), phone: v } })); }
+//                                     }}
+//                                     placeholder="Optional"
+//                                     style={[styles.modernInput, { fontSize: 13 }]}
+//                                     keyboardType="email-address"
+//                                     autoCapitalize="none"
+//                                   />
+//                                 </View>
+//                               </View>
+//                               <View style={{ flex: 1 }}>
+//                                 <Text style={[styles.inputLabel, { fontSize: 11 }]}>Rent</Text>
+//                                 <View style={[styles.inputWrapper, { height: 44, borderRadius: 12, backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB" }]}>
+//                                   <TextInput
+//                                     value={editAll ? (editValues[idx]?.rent ?? t.rent ?? "") : (rowEditValues[idx]?.rent ?? t.rent ?? "")}
+//                                     onChangeText={(val) => {
+//                                       const digits = val.replace(/[^0-9]/g, "");
+//                                       if (editAll) { setEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), rent: digits } })); }
+//                                       else { setRowEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), rent: digits } })); }
+//                                     }}
+//                                     placeholder="₹ Rent"
+//                                     style={[styles.modernInput, { fontSize: 13 }]}
+//                                     keyboardType="numeric"
+//                                   />
+//                                 </View>
+//                               </View>
+//                             </View>
+
+//                             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 }}>
+//                               <Text style={[styles.inputLabel, { fontSize: 11, marginBottom: 0 }]}>Assign Bed</Text>
+//                               <View style={{ flexDirection: "row", gap: 6 }}>
+//                                 {(() => {
+//                                   const key = `${selectedFloor}-${selectedRoom}`;
+//                                   const list = (stayType === "hostel" ? tenants : apartments)[key] ?? [];
+//                                   const chosen = editAll
+//                                     ? new Set(list.map((p, i) => i === idx ? null : (editValues[i]?.bed ?? p.bed)).filter((x) => !!x))
+//                                     : new Set(list.map((p, i) => i === idx ? null : p.bed).filter((x) => !!x));
+//                                   return [1, 2, 3, 4].map((b) => {
+//                                     const active = editAll ? (editValues[idx]?.bed ?? t.bed) === b : (rowEditValues[idx]?.bed ?? t.bed) === b;
+//                                     const disabled = chosen.has(b);
+//                                     return (
+//                                       <TouchableOpacity
+//                                         key={b}
+//                                         style={[
+//                                           styles.bedBtn,
+//                                           { width: 34, height: 34, borderRadius: 10, marginHorizontal: 0 },
+//                                           active && styles.bedBtnActive,
+//                                           disabled && styles.bedBtnOccupied,
+//                                         ]}
+//                                         onPress={() => {
+//                                           if (editAll) {
+//                                             setEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), bed: b } }));
+//                                           } else {
+//                                             setRowEditValues((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), bed: b } }));
+//                                           }
+//                                         }}
+//                                         disabled={disabled}
+//                                       >
+//                                         <Text style={[styles.bedBtnText, active && styles.bedBtnTextActive, disabled && styles.bedBtnTextOccupied, { fontSize: 12 }]}>
+//                                           {disabled ? "✓" : b}
+//                                         </Text>
+//                                       </TouchableOpacity>
+//                                     );
+//                                   });
+//                                 })()}
+//                               </View>
+//                             </View>
+
+//                             {rowEditIndex === idx && (
+//                               <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+//                                 {(() => {
+//                                   const key = `${selectedFloor}-${selectedRoom}`;
+//                                   const list = (stayType === "hostel" ? tenants : apartments)[key] ?? [];
+//                                   const v = rowEditValues[idx] || {};
+//                                   const nm = v.name ?? t.name;
+//                                   const ph = v.phone ?? t.phone;
+//                                   const em = v.phone ?? t.phone ?? "";
+//                                   const bd = v.bed ?? t.bed;
+//                                   const used = new Set(list.map((p, i) => i === idx ? null : p.bed).filter((x) => !!x));
+//                                   const valid = /^[A-Za-z\s]+$/.test((nm || "").trim()) &&
+//                                     /^\d{10,11}$/.test((ph || "").trim()) &&
+//                                     ((em || "").trim().length === 0 || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((em || "").trim())) &&
+//                                     bd >= 1 && bd <= 4 && !used.has(bd);
+
+//                                   return (
+//                                     <>
+//                                       <TouchableOpacity
+//                                         style={[styles.submitBtn, { flex: 1.5, marginHorizontal: 0, marginBottom: 0, height: 44, borderRadius: 12 }]}
+//                                         disabled={!valid}
+//                                         onPress={() => {
+//                                           const updated = list.map((p, i) => {
+//                                             if (i !== idx) return p;
+//                                             const vv = rowEditValues[idx] || {};
+//                                             return {
+//                                               ...p,
+//                                               name: (vv.name ?? p.name).trim(),
+//                                               phone: (vv.phone ?? p.phone).trim(),
+//                                               phone: (vv.phone ?? p.phone ?? "").trim(),
+//                                               bed: vv.bed ?? p.bed,
+//                                               rent: (vv.rent ?? p.rent ?? "").trim(),
+//                                               checkIn: (vv.in ?? p.checkIn ?? "").trim(),
+//                                               checkOut: (vv.out ?? p.checkOut ?? "").trim(),
+//                                               idUri: vv.idUri ?? p.idUri,
+//                                             };
+//                                           });
+//                                           setTenants((prev) => ({ ...prev, [key]: updated }));
+//                                           setRowEditIndex(null);
+//                                           setRowEditValues({});
+//                                         }}
+//                                       >
+//                                         <Text style={[styles.submitBtnText, { fontSize: 13 }]}>Save</Text>
+//                                       </TouchableOpacity>
+//                                       <TouchableOpacity
+//                                         style={{ flex: 1, backgroundColor: "#F3F4F6", borderRadius: 12, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "#E5E7EB" }}
+//                                         onPress={() => { setRowEditIndex(null); setRowEditValues({}); }}
+//                                       >
+//                                         <Text style={{ color: COLORS.TEXT_SECONDARY, fontWeight: "700", fontSize: 13 }}>Cancel</Text>
+//                                       </TouchableOpacity>
+//                                       <TouchableOpacity
+//                                         onPress={() => removeTenant(selectedFloor, selectedRoom, idx)}
+//                                         style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: "#FEF2F2", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#FEE2E2" }}
+//                                       >
+//                                         <Ionicons name="trash-outline" size={20} color={COLORS.ERROR} />
+//                                       </TouchableOpacity>
+//                                     </>
+//                                   );
+//                                 })()}
+//                               </View>
+//                             )}
+//                           </View>
+//                         )}
+//                         </View>
+//                       </View>
+//                     ))}
+//                     {(tenants[`${selectedFloor}-${selectedRoom}`] ?? []).length === 0 && (
+//                       <Text style={styles.emptyTenants}>No tenants</Text>
+//                     )}
+//                   </>
+//                 )}
+//                 {/* Personal Information Card */}
+//                 <View style={[styles.formSection, styles.cardPersonal]}>
+//                   <View style={styles.formSectionTitle}>
+//                     <Ionicons name="person-circle" size={24} color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
+//                     <Text style={[styles.formSectionTitle, { marginBottom: 0 }]}>Personal Information</Text>
+//                   </View>
+
+//                   <View style={styles.inputGroup}>
+//                     <Text style={styles.inputLabel}>Full Name</Text>
+//                     <View style={[styles.inputWrapper, touchedName && !isValidName(tenantName) && styles.inputErrorBorder]}>
+//                       <Ionicons name="person-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                       <TextInput
+//                         value={tenantName}
+//                         onChangeText={(t) => { if (/^[A-Za-z\s]*$/.test(t)) setTenantName(t); }}
+//                         onBlur={() => setTouchedName(true)}
+//                         style={styles.modernInput}
+//                         placeholder="e.g. John Doe"
+//                         placeholderTextColor={COLORS.TEXT_LIGHT}
+//                       />
+//                     </View>
+//                   </View>
+
+//                   <View style={styles.rowContainer}>
+//                     <View style={[styles.inputGroup, styles.flex1]}>
+//                       <Text style={styles.inputLabel}>Contact Number</Text>
+//                       <View style={[styles.inputWrapper, touchedPhone && !isValidPhone(contactNumber) && styles.inputErrorBorder]}>
+//                         <Ionicons name="call-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                         <TextInput
+//                           value={contactNumber}
+//                           onChangeText={(t) => setContactNumber(t.replace(/[^0-9]/g, "").slice(0, 11))}
+//                           onBlur={() => setTouchedPhone(true)}
+//                           style={styles.modernInput}
+//                           placeholder="Phone No"
+//                           keyboardType="numeric"
+//                           maxLength={11}
+//                         />
+//                       </View>
+//                     </View>
+//                   </View>
+
+//                   <View style={styles.inputGroup}>
+//                     <Text style={styles.inputLabel}>phone Address</Text>
+//                     <View style={[styles.inputWrapper, touchedEmail && !isValidEmail(tenantPhone) && styles.inputErrorBorder]}>
+//                       <Ionicons name="mail-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                       <TextInput
+//                         value={tenantPhone}
+//                         onChangeText={settenantPhone}
+//                         onBlur={() => setTouchedEmail(true)}
+//                         style={styles.modernInput}
+//                         placeholder="Optional"
+//                         autoCapitalize="none"
+//                         keyboardType="email-address"
+//                       />
+//                     </View>
+//                   </View>
+//                 </View>
+
+//                 {/* Room & Bed Assignment Card */}
+//                 <View style={[styles.formSection, styles.cardRoom]}>
+//                   <View style={styles.formSectionTitle}>
+//                     <Ionicons name="business-outline" size={24} color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
+//                     <Text style={[styles.formSectionTitle, { marginBottom: 0 }]}>Room Assignment</Text>
+//                   </View>
+
+//                   <View style={[styles.rowContainer, { marginTop: 10 }]}>
+//                     <View style={[styles.inputGroup, styles.flex1]}>
+//                       <Text style={styles.inputLabel}>Floor</Text>
+//                       <View style={[styles.inputWrapper, { backgroundColor: "#F9FAFB" }]}>
+//                         <Ionicons name="layers-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                         <Text style={[styles.modernInput, { color: COLORS.TEXT_PRIMARY, textAlignVertical: "center" }]}>
+//                           {selectedFloor ? String(selectedFloor).replace("Floor ", "") : "--"}
+//                         </Text>
+//                       </View>
+//                     </View>
+//                     <View style={[styles.inputGroup, styles.flex1]}>
+//                       <Text style={styles.inputLabel}>
+//                         {stayType === "hostel" ? "Room" : stayType === "apartment" ? "Flat" : "Section"}
+//                       </Text>
+//                       <View style={[styles.inputWrapper, { backgroundColor: "#F9FAFB" }]}>
+//                         <Ionicons name="home-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                         <Text style={[styles.modernInput, { color: COLORS.TEXT_PRIMARY, textAlignVertical: "center" }]}>
+//                           {selectedRoom ? String(selectedRoom).replace("Section ", "").replace("Room ", "").replace("Flat ", "") : "--"}
+//                         </Text>
+//                       </View>
+//                     </View>
+//                   </View>
+
+//                   {stayType === "hostel" && (
+//                     <View style={{ marginTop: 10 }}>
+//                       <Text style={styles.inputLabel}>Select Available Bed</Text>
+//                       <View style={styles.bedSelectionGrid}>
+//                         {(() => {
+//                           const occupied = (tenants[`${selectedFloor}-${selectedRoom}`] ?? []).map((x) => x.bed);
+//                           const totalBeds = getTotalBeds(selectedFloor, selectedRoom);
+//                           return Array.from({ length: totalBeds }, (_, i) => i + 1).map((b) => {
+//                             const isOcc = occupied.includes(b);
+//                             const isSelected = bedNumber === b;
+//                             return (
+//                               <TouchableOpacity
+//                                 key={b}
+//                                 style={[
+//                                   styles.bedCard,
+//                                   isSelected && styles.bedCardSelected,
+//                                   isOcc && styles.bedCardOccupied,
+//                                 ]}
+//                                 onPress={() => !isOcc && setBedNumber(b)}
+//                                 disabled={isOcc}
+//                               >
+//                                 {isOcc && (
+//                                   <Ionicons 
+//                                     name="checkmark-circle" 
+//                                     size={24} 
+//                                     color={isSelected ? COLORS.WHITE : COLORS.TEXT_LIGHT} 
+//                                     style={{ marginBottom: 4 }}
+//                                   />
+//                                 )}
+//                                 <Text style={[styles.bedCardText, isSelected && styles.bedCardTextSelected, isOcc && { color: COLORS.TEXT_LIGHT, fontSize: 10 }]}>
+//                                   {isOcc ? "Occupied" : `Bed ${b}`}
+//                                 </Text>
+//                               </TouchableOpacity>
+//                             );
+//                           });
+//                         })()}
+//                       </View>
+//                     </View>
+//                   )}
+//                 </View>
+
+//                 {/* Lease & Terms Card */}
+//                 <View style={[styles.formSection, styles.cardLease]}>
+//                   <View style={styles.formSectionTitle}>
+//                     <Ionicons name="document-lock-outline" size={24} color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
+//                     <Text style={[styles.formSectionTitle, { marginBottom: 0 }]}>Lease & Identity</Text>
+//                   </View>
+
+//                   <View style={styles.inputGroup}>
+//                     <Text style={styles.inputLabel}>Monthly Rent (₹)</Text>
+//                     <View style={[styles.inputWrapper, touchedRent && monthlyRent.trim().length === 0 && styles.inputErrorBorder]}>
+//                       <Ionicons name="cash-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                       <TextInput
+//                         value={monthlyRent}
+//                         onChangeText={(t) => setMonthlyRent(t.replace(/[^0-9]/g, ""))}
+//                         onBlur={() => setTouchedRent(true)}
+//                         style={styles.modernInput}
+//                         placeholder="Expected Rent Amount"
+//                         keyboardType="numeric"
+//                       />
+//                     </View>
+//                   </View>
+
+//                   <View style={styles.rowContainer}>
+//                     <View style={[styles.inputGroup, styles.flex1]}>
+//                       <Text style={styles.inputLabel}>Check-in Date</Text>
+//                       <View style={styles.inputWrapper}>
+//                         <Ionicons name="calendar-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                         <TextInput
+//                           value={checkIn}
+//                           onChangeText={(t) => setCheckIn(t.replace(/[^\d/-]/g, ""))}
+//                           style={styles.modernInput}
+//                           placeholder="YYYY-MM-DD"
+//                         />
+//                       </View>
+//                     </View>
+//                     <View style={[styles.inputGroup, styles.flex1]}>
+//                       <Text style={styles.inputLabel}>Check-out Date</Text>
+//                       <View style={styles.inputWrapper}>
+//                         <Ionicons name="calendar-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+//                         <TextInput
+//                           value={checkOut}
+//                           onChangeText={(t) => setCheckOut(t.replace(/[^\d/-]/g, ""))}
+//                           style={styles.modernInput}
+//                           placeholder="Optional"
+//                         />
+//                       </View>
+//                     </View>
+//                   </View>
+
+//                   <View style={styles.inputGroup}>
+//                     <Text style={styles.inputLabel}>Identity Verification</Text>
+//                     {(idProofUri || idOpenUri) ? (
+//                       <View style={[styles.idMiniPreview, { padding: 8, borderRadius: 12 }]}>
+//                         <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(39, 174, 96, 0.1)", alignItems: "center", justifyContent: "center" }}>
+//                           <Ionicons name="shield-checkmark" size={18} color={COLORS.SUCCESS} />
+//                         </View>
+//                         <View style={{ flex: 1, marginLeft: 10 }}>
+//                           <Text style={[styles.idMiniPreviewText, { fontSize: 12, marginLeft: 0 }]} numberOfLines={1}>
+//                             ID Verified & Secure
+//                           </Text>
+//                           <Text style={{ fontSize: 10, color: COLORS.TEXT_LIGHT }}>Document attached</Text>
+//                         </View>
+//                         <TouchableOpacity
+//                           style={[styles.viewIdBtn, { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }]}
+//                           onPress={async () => {
+//                             setPreviewUri(idOpenUri || idProofUri);
+//                             setIdPreviewVisible(true);
+//                           }}
+//                         >
+//                           <Text style={[styles.viewIdText, { fontSize: 10 }]}>VIEW</Text>
+//                         </TouchableOpacity>
+//                         <TouchableOpacity
+//                           onPress={() => {
+//                             setIdProofUri("");
+//                             setIdOpenUri("");
+//                           }}
+//                           style={{ marginLeft: 8 }}
+//                         >
+//                           <Ionicons name="trash-outline" size={20} color={COLORS.ERROR} />
+//                         </TouchableOpacity>
+//                       </View>
+//                     ) : (
+//                       <TouchableOpacity
+//                         style={[styles.uploadAction, { padding: 10, borderRadius: 12 }]}
+//                         activeOpacity={0.7}
+//                         onPress={async () => {
+//                           try {
+//                             const res = await DocumentPicker.getDocumentAsync({
+//                               type: ["image/*", "application/pdf"],
+//                             });
+//                             if (!res.canceled) {
+//                               setIdProofFile(res.assets[0].name);
+//                               setIdProofUri(res.assets[0].uri);
+//                             }
+//                           } catch (err) {
+//                             console.log("Picker error:", err);
+//                           }
+//                         }}
+//                       >
+//                         <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: "rgba(95, 37, 159, 0.1)", alignItems: "center", justifyContent: "center" }}>
+//                           <Ionicons name="cloud-upload-outline" size={20} color={COLORS.PRIMARY} />
+//                         </View>
+//                         <View style={{ marginLeft: 12 }}>
+//                           <Text style={[styles.uploadActionText, { fontSize: 14, marginLeft: 0 }]}>Upload Identity Proof</Text>
+//                           <Text style={{ fontSize: 11, color: COLORS.TEXT_LIGHT }}>PDF or Image preferred</Text>
+//                         </View>
+//                       </TouchableOpacity>
+//                     )}
+//                   </View>
+//                 </View>
+
+//                 <TouchableOpacity
+//                   style={[styles.submitBtn, !isFormValid() && styles.submitBtnDisabled]}
+//                   onPress={() => saveTenant()}
+//                   disabled={!isFormValid()}
+//                 >
+//                   <Text style={styles.submitBtnText}>Confirm Registration</Text>
+//                   <Ionicons name="checkmark-done" size={24} color={COLORS.WHITE} />
+//                 </TouchableOpacity>
+//               </ScrollView>
+//             </View>
+//           </KeyboardAvoidingView>
+//         </View>
+//       </Modal>
+
+//       {/* ID Preview Modal */ }
+//   <Modal transparent visible={idPreviewVisible} animationType="fade">
+//     <View style={styles.previewOverlay}>
+//       <View style={styles.previewCard}>
+//         <View style={styles.previewHeader}>
+//           <Text style={[styles.modalTitle, { color: COLORS.TEXT_PRIMARY }]}>ID Preview</Text>
+//           <View style={styles.previewZoomControls}>
+//             <TouchableOpacity
+//               style={styles.zoomIconBtn}
+//               onPress={() => setPreviewScale(Math.max(1, previewScale - 0.2))}
+//             >
+//               <Ionicons name="remove" size={20} color={COLORS.PRIMARY} />
+//             </TouchableOpacity>
+//             <Text style={styles.zoomIndicator}>{Math.round(previewScale * 100)}%</Text>
+//             <TouchableOpacity
+//               style={styles.zoomIconBtn}
+//               onPress={() => setPreviewScale(Math.min(3, previewScale + 0.2))}
+//             >
+//               <Ionicons name="add" size={20} color={COLORS.PRIMARY} />
+//             </TouchableOpacity>
+//             <TouchableOpacity
+//               onPress={() => setIdPreviewVisible(false)}
+//               style={{ marginLeft: 8 }}
+//             >
+//               <Ionicons name="close-circle" size={32} color={COLORS.TEXT_LIGHT} />
+//             </TouchableOpacity>
+//           </View>
+//         </View>
+
+//         <PinchGestureHandler
+//           onGestureEvent={(e) => {
+//             const scale = e.nativeEvent.scale ?? 1;
+//             setPreviewScale((prev) => Math.min(3, Math.max(1, prev * scale)));
+//           }}
+//           onHandlerStateChange={onPinchStateChange}
+//         >
+//           <View style={styles.previewContent}>
+//             <ScrollView
+//               contentContainerStyle={{ alignItems: "center" }}
+//               showsVerticalScrollIndicator={false}
+//             >
+//               {previewUri ? (
+//                 previewUri.toLowerCase().endsWith(".pdf") ? (
+//                   <WebView
+//                     source={{
+//                       uri: Platform.OS === "android" && /^https?:/i.test(previewUri)
+//                         ? "https://docs.google.com/gview?embedded=true&url=" + encodeURIComponent(previewUri)
+//                         : previewUri,
+//                     }}
+//                     style={{
+//                       width: Dimensions.get("window").width - 80,
+//                       height: 400 * previewScale,
+//                     }}
+//                   />
+//                 ) : (
+//                   <Image
+//                     source={{ uri: previewUri }}
+//                     style={{
+//                       width: Dimensions.get("window").width - 40,
+//                       height: 400 * previewScale,
+//                     }}
+//                     resizeMode="contain"
+//                   />
+//                 )
+//               ) : (
+//                 <Text style={{ padding: 20 }}>No preview available</Text>
+//               )}
+//             </ScrollView>
+//           </View>
+//         </PinchGestureHandler>
+//       </View>
+//     </View>
+//   </Modal>
+//     </ScrollView>
+//   );
+// }
+
+// const styles = StyleSheet.create({
+//   container: {
+//     flex: 1,
+//     backgroundColor: "#f7eeee",
+//     padding: 10,
+//   },
+//   welcome: {
+//     fontSize: 24,
+//     fontWeight: "800",
+//     color: COLORS.TEXT_PRIMARY,
+//     marginTop: 10,
+//     letterSpacing: -0.5,
+//   },
+//   contentRow: {
+//     flexDirection: "row",
+//     gap: 12,
+//     marginTop: 16,
+//   },
+//   sidebar: {
+//     width: 64,
+//     height: CARD_HEIGHT,
+//     borderRadius: 20,
+//     backgroundColor: COLORS.WHITE,
+//     padding: 8,
+//     alignItems: "center",
+//     gap: 12,
+//     shadowColor: "#000",
+//     shadowOpacity: 0.05,
+//     shadowRadius: 10,
+//     elevation: 3,
+//   },
+//   sideButton: {
+//     width: 44,
+//     height: 44,
+//     borderRadius: 14,
+//     backgroundColor: "#F3F4F6",
+//     alignItems: "center",
+//     justifyContent: "center",
+//   },
+//   sideButtonActive: {
+//     backgroundColor: COLORS.PRIMARY,
+//     shadowColor: COLORS.PRIMARY,
+//     shadowOpacity: 0.3,
+//     shadowRadius: 5,
+//     elevation: 4,
+//   },
+//   sideButtonText: {
+//     fontSize: 14,
+//     color: COLORS.TEXT_SECONDARY,
+//     fontWeight: "700",
+//   },
+//   sideButtonTextActive: {
+//     color: COLORS.WHITE,
+//   },
+//   sideBarProgress: {
+//     width: "100%",
+//     height: 6,
+//     borderRadius: 3,
+//     backgroundColor: "#E5E7EB",
+//     marginTop: 6,
+//     overflow: "hidden",
+//   },
+//   sideBarProgressFill: {
+//     height: "100%",
+//     borderRadius: 3,
+//   },
+//   sectionHeader: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     justifyContent: "space-between",
+//     marginBottom: 10,
+//   },
+//   slider: {
+//     flex: 1,
+//   },
+//   card: {
+//     backgroundColor: "#FFFFFF",
+//     borderRadius: 18,
+//     padding: 12,
+//     shadowColor: "#000",
+//     shadowOpacity: 0.08,
+//     shadowRadius: 8,
+//     shadowOffset: { width: 0, height: 4 },
+//     elevation: 4,
+//   },
+//   cardScroll: {
+//     flex: 1,
+//   },
+//   subHeader: {
+//     fontSize: 62,
+//     color: "gray",
+//     marginBottom: 20,
+//   },
+//   statsContainer: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     marginBottom: 20,
+//     gap: 10,
+//   },
+//   statBox: {
+//     flex: 1,
+//     padding: 15,
+//     borderRadius: 18,
+//     alignItems: "center",
+//     backgroundColor: COLORS.WHITE,
+//     shadowColor: "#000",
+//     shadowOpacity: 0.04,
+//     shadowRadius: 8,
+//     elevation: 2,
+//     borderWidth: 1,
+//     borderColor: "rgba(0,0,0,0.02)",
+//   },
+//   statNumber: {
+//     fontSize: 22,
+//     fontWeight: "800",
+//     color: COLORS.TEXT_PRIMARY,
+//   },
+//   statLabel: {
+//     fontSize: 11,
+//     color: COLORS.TEXT_SECONDARY,
+//     fontWeight: "700",
+//     textTransform: "uppercase",
+//     marginTop: 2,
+//   },
+//   sectionTitle: {
+//     fontSize: 20,
+//     fontWeight: "800",
+//     color: COLORS.TEXT_PRIMARY,
+//     letterSpacing: -0.5,
+//   },
+//   floorTitle: {
+//     marginTop: 0,
+//     marginBottom: 8,
+//     fontWeight: "700",
+//     color: "#222",
+//     fontSize: 16,
+//     textAlign: "center",
+//   },
+//   legendRow: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     gap: 8,
+//     marginTop: 12,
+//   },
+//   legendDot: {
+//     width: 10,
+//     height: 10,
+//     borderRadius: 5,
+//   },
+//   legendText: {
+//     fontSize: 12,
+//     color: "#666",
+//     marginRight: 12,
+//   },
+//   roomGrid: {
+//     flexDirection: "row",
+//     flexWrap: "wrap",
+//     gap: 10,
+//   },
+//   roomBox: {
+//     width: "28%",
+//     padding: 12,
+//     borderRadius: 12,
+//     alignItems: "center",
+//     marginBottom: 10,
+//   },
+//   roomNumber: {
+//     color: "#fff",
+//     fontWeight: "bold",
+//     fontSize: 15,
+//   },
+//   roomText: {
+//     color: "#fff",
+//     fontSize: 11,
+//   },
+//   plus: {
+//     color: "#fff",
+//     fontSize: 16,
+//     marginTop: 5,
+//   },
+//   controlsRow: {
+//     flexDirection: "row",
+//     gap: 8,
+//     marginTop: 8,
+//   },
+//   controlBtn: {
+//     backgroundColor: "#ffffff",
+//     borderWidth: 1,
+//     borderColor: "#ddd",
+//     borderRadius: 10,
+//     paddingHorizontal: 10,
+//     paddingVertical: 4,
+//   },
+//   modalOverlay: {
+//     flex: 1,
+//     backgroundColor: "rgba(0,0,0,0.5)",
+//   },
+//   modalCard: {
+//     backgroundColor: COLORS.BACKGROUND,
+//     flex: 1,
+//     overflow: "hidden",
+//   },
+//   modalTitle: {
+//     fontSize: 22,
+//     fontWeight: "800",
+//     color: COLORS.WHITE,
+//     letterSpacing: 0.5,
+//   },
+//   modalCloseBtn: {
+//     backgroundColor: "rgba(255,255,255,0.2)",
+//     padding: 6,
+//     borderRadius: 12,
+//   },
+//   modalHeaderBar: {
+//     paddingTop: Platform.OS === "ios" ? 50 : 20,
+//     backgroundColor: COLORS.PRIMARY,
+//     paddingBottom: 20,
+//     paddingHorizontal: 20,
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     alignItems: "center",
+//     shadowColor: "#000",
+//     shadowOpacity: 0.15,
+//     shadowRadius: 10,
+//     elevation: 5,
+//   },
+//   modalStatsCards: {
+//     flexDirection: "row",
+//     gap: 12,
+//     paddingTop: 12,
+//     marginBottom: 10,
+//   },
+//   statBadge: {
+//     flex: 1,
+//     padding: 12,
+//     borderRadius: 16,
+//     alignItems: "center",
+//   },
+//   statBadgeLabel: {
+//     fontSize: 10,
+//     fontWeight: "700",
+//     textTransform: "uppercase",
+//     marginBottom: 2,
+//   },
+//   statBadgeValue: {
+//     fontSize: 15,
+//     fontWeight: "800",
+//   },
+//   modalContentScroll: {
+//     paddingHorizontal: 16,
+//     paddingTop: 8,
+//     paddingBottom: 24,
+//   },
+//   formSection: {
+//     backgroundColor: COLORS.WHITE,
+//     borderRadius: 16,
+//     padding: 12,
+//     marginBottom: 12,
+//     shadowColor: "#000",
+//     shadowOpacity: 0.04,
+//     shadowRadius: 10,
+//     elevation: 2,
+//     borderWidth: 1,
+//     borderColor: "rgba(0,0,0,0.02)",
+//   },
+//   cardPersonal: {
+//     backgroundColor: COLORS.WHITE,
+//     borderColor: "rgba(95, 37, 159, 0.1)", // PRIMARY with low opacity
+//     borderWidth: 1,
+//   },
+//   cardRoom: {
+//     backgroundColor: COLORS.WHITE,
+//     borderColor: "rgba(95, 37, 159, 0.1)",
+//     borderWidth: 1,
+//   },
+//   cardLease: {
+//     backgroundColor: COLORS.WHITE,
+//     borderColor: "rgba(95, 37, 159, 0.1)",
+//     borderWidth: 1,
+//   },
+//   formSectionTitle: {
+//     fontSize: 15,
+//     fontWeight: "800",
+//     color: COLORS.TEXT_PRIMARY,
+//     marginBottom: 12,
+//     flexDirection: "row",
+//     alignItems: "center",
+//   },
+//   inputGroup: {
+//     marginBottom: 16,
+//   },
+//   inputLabel: {
+//     fontSize: 12,
+//     fontWeight: "700",
+//     color: COLORS.TEXT_SECONDARY,
+//     marginBottom: 6,
+//     marginLeft: 4,
+//     textTransform: "uppercase",
+//     letterSpacing: 0.5,
+//   },
+//   inputWrapper: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     backgroundColor: COLORS.WHITE,
+//     borderRadius: 12,
+//     paddingHorizontal: 12,
+//     height: 48,
+//     shadowColor: "#000",
+//     shadowOpacity: 0.02,
+//     shadowRadius: 5,
+//     elevation: 1,
+//   },
+//   inputIcon: {
+//     marginRight: 12,
+//   },
+//   modernInput: {
+//     flex: 1,
+//     fontSize: 16,
+//     color: COLORS.TEXT_PRIMARY,
+//     fontWeight: "600",
+//   },
+//   inputErrorBorder: {
+//     borderWidth: 1.5,
+//     borderColor: COLORS.ERROR,
+//   },
+//   rowContainer: {
+//     flexDirection: "row",
+//     gap: 12,
+//   },
+//   flex1: {
+//     flex: 1,
+//   },
+//   bedSelectionGrid: {
+//     flexDirection: "row",
+//     flexWrap: "wrap",
+//     gap: 12,
+//   },
+//   bedCard: {
+//     width: "22%",
+//     aspectRatio: 1,
+//     borderRadius: 16,
+//     justifyContent: "center",
+//     alignItems: "center",
+//     backgroundColor: COLORS.WHITE,
+//     shadowColor: "#000",
+//     shadowOpacity: 0.05,
+//     shadowRadius: 10,
+//     elevation: 2,
+//   },
+//   bedCardSelected: {
+//     backgroundColor: COLORS.PRIMARY,
+//     transform: [{ scale: 1.05 }],
+//   },
+//   bedCardOccupied: {
+//     backgroundColor: "rgba(0,0,0,0.05)",
+//     opacity: 0.4,
+//   },
+//   bedCardText: {
+//     fontSize: 18,
+//     fontWeight: "800",
+//     color: COLORS.TEXT_PRIMARY,
+//   },
+//   bedCardTextSelected: {
+//     color: COLORS.WHITE,
+//   },
+//   uploadAction: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     backgroundColor: "rgba(255,255,255,0.7)",
+//     borderRadius: 12,
+//     padding: 12,
+//     borderWidth: 1.5,
+//     borderStyle: "dashed",
+//     borderColor: COLORS.PRIMARY,
+//   },
+//   uploadActionText: {
+//     marginLeft: 10,
+//     color: COLORS.PRIMARY,
+//     fontWeight: "700",
+//     fontSize: 15,
+//   },
+//   idMiniPreview: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     backgroundColor: COLORS.WHITE,
+//     borderRadius: 16,
+//     padding: 12,
+//     borderWidth: 1,
+//     borderColor: COLORS.SUCCESS,
+//   },
+//   idMiniPreviewText: {
+//     flex: 1,
+//     fontSize: 13,
+//     color: COLORS.SUCCESS,
+//     fontWeight: "600",
+//     marginLeft: 10,
+//   },
+//   viewIdBtn: {
+//     paddingHorizontal: 12,
+//     paddingVertical: 6,
+//     backgroundColor: COLORS.SUCCESS,
+//     borderRadius: 8,
+//   },
+//   viewIdText: {
+//     color: COLORS.WHITE,
+//     fontSize: 11,
+//     fontWeight: "800",
+//   },
+//   submitBtn: {
+//     backgroundColor: COLORS.PRIMARY,
+//     borderRadius: 12,
+//     height: 54,
+//     flexDirection: "row",
+//     justifyContent: "center",
+//     alignItems: "center",
+//     marginHorizontal: 16,
+//     marginBottom: 32,
+//     shadowColor: COLORS.PRIMARY,
+//     shadowOpacity: 0.3,
+//     shadowRadius: 10,
+//     elevation: 6,
+//   },
+//   submitBtnDisabled: {
+//     backgroundColor: COLORS.TEXT_LIGHT,
+//     shadowOpacity: 0,
+//     elevation: 0,
+//   },
+//   submitBtnText: {
+//     color: COLORS.WHITE,
+//     fontSize: 18,
+//     fontWeight: "800",
+//     marginRight: 10,
+//   },
+//   previewOverlay: {
+//     flex: 1,
+//     backgroundColor: "rgba(0,0,0,0.9)",
+//     justifyContent: "center",
+//     alignItems: "center",
+//   },
+//   previewCard: {
+//     width: "95%",
+//     backgroundColor: COLORS.WHITE,
+//     borderRadius: 30,
+//     overflow: "hidden",
+//     maxHeight: "85%",
+//   },
+//   previewHeader: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     alignItems: "center",
+//     padding: 20,
+//     backgroundColor: "#F9FAFB",
+//     borderBottomWidth: 1,
+//     borderBottomColor: COLORS.BORDER,
+//   },
+//   previewZoomControls: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     gap: 15,
+//   },
+//   zoomIndicator: {
+//     fontSize: 15,
+//     fontWeight: "700",
+//     color: COLORS.PRIMARY,
+//     minWidth: 50,
+//     textAlign: "center",
+//   },
+//   zoomIconBtn: {
+//     width: 36,
+//     height: 36,
+//     borderRadius: 18,
+//     backgroundColor: COLORS.WHITE,
+//     justifyContent: "center",
+//     alignItems: "center",
+//     shadowColor: "#000",
+//     shadowOpacity: 0.1,
+//     shadowRadius: 5,
+//     elevation: 2,
+//   },
+//   previewContent: {
+//     padding: 10,
+//     backgroundColor: "#F3F4F6",
+//   },
+//   badge: {
+//     position: "absolute",
+//     right: -6,
+//     top: -4,
+//     backgroundColor: COLORS.ERROR,
+//     borderRadius: 10,
+//     paddingHorizontal: 6,
+//     minWidth: 20,
+//     height: 20,
+//     justifyContent: "center",
+//     alignItems: "center",
+//   },
+//   badgeText: {
+//     color: COLORS.WHITE,
+//     fontSize: 11,
+//     fontWeight: "900",
+//   },
+//   tenantCard: {
+//     backgroundColor: COLORS.WHITE,
+//     borderRadius: 16,
+//     padding: 12,
+//     marginBottom: 10,
+//     flexDirection: "row",
+//     alignItems: "center",
+//     shadowColor: "#000",
+//     shadowOpacity: 0.03,
+//     shadowRadius: 6,
+//     elevation: 2,
+//     borderWidth: 1,
+//     borderColor: "rgba(0,0,0,0.02)",
+//   },
+//   tenantName: {
+//     fontSize: 16,
+//     fontWeight: "800",
+//     color: COLORS.TEXT_PRIMARY,
+//   },
+//   tenantMeta: {
+//     fontSize: 13,
+//     color: COLORS.TEXT_SECONDARY,
+//     fontWeight: "600",
+//   },
+//   tenantDelete: {
+//     fontSize: 18,
+//     color: COLORS.ERROR,
+//     paddingHorizontal: 8,
+//   },
+//   emptyTenants: {
+//     color: COLORS.TEXT_LIGHT,
+//     fontSize: 14,
+//     fontStyle: "italic",
+//     textAlign: "center",
+//     marginVertical: 10,
+//   },
+// });
+
+
+import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+import { BookingContext } from "@/src/context/BookingContext";
+import { useNavigation } from "@react-navigation/native";
+import { useContext } from "react";
+import { useWindowDimensions } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import BASE_URL from "@/src/config/Api";
+import COLORS from "@/src/theme/colors";
+import {
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { PinchGestureHandler, State } from "react-native-gesture-handler";
+import { WebView } from "react-native-webview";
+import { useLanguage } from "../../utils/LanguageContext";
+import { LinearGradient } from "expo-linear-gradient";
+
+const getAvatarBgColor = (name) => {
+  const char = (name || "A").charAt(0).toUpperCase();
+  const colors = {
+    A: "#3B82F6", B: "#10B981", C: "#EF4444", D: "#F59E0B", E: "#8B5CF6",
+    F: "#EC4899", G: "#06B6D4", H: "#F97316", I: "#14B8A6", J: "#6366F1",
+    K: "#34D399", L: "#FB7185", M: "#60A5FA", N: "#F472B6", O: "#A78BFA",
+    P: "#34D399", Q: "#F59E0B", R: "#6C2BD9", S: "#3B82F6", T: "#F43F5E",
+    U: "#0EA5E9", V: "#8B5CF6", W: "#10B981", X: "#EF4444", Y: "#F59E0B", Z: "#6C2BD9"
+  };
+  return colors[char] || "#6C2BD9";
+};
+
+// Configuration
+const SIDEBAR_WIDTH_RATIO = 0.18; // 18% of screen width
+const MAX_SIDEBAR_WIDTH = 75;
+const CONTENT_GAP = 10;
+const CONTAINER_PADDING = 18;
+
+export default function BuildingScreen({ route }) {
+  const { t, changeLanguage, language } = useLanguage();
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [viewMode, setViewMode] = useState("floor");
+  const [apartments, setApartments] = useState({});
+  const [apartmentCounts, setApartmentCounts] = useState({});
+
+  const phone = route?.params?.phone;
+  const navigation = useNavigation();
+  const [response_data, setResponseData] = useState(null);
+  const { pendingCount, setRequests, refreshTrigger, setRefreshTrigger, unreadNotificationsCount } = useContext(BookingContext);
+
+  // const propertyStayType = response_data?.stay_type || "hostel";
+  const ownerName = response_data?.owner?.name;
+  const ownerPhone = response_data?.owner?.phone;
+  const floorsData = response_data?.building_layout;
+  // const roomsData = response_data?.building_layout?.flatMap(floor => floor.rooms);
+  const roomsData =
+    response_data?.building_layout?.flatMap(floor => floor.rooms || []) || [];
+  // const bedsData = response_data?.building_layout?.flatMap(floor =>
+  //   floor.rooms.map(room => room.beds)
+  // );
+  const bedsData =
+    response_data?.building_layout?.flatMap(floor =>
+      (floor.rooms || []).flatMap(room => room.beds || [])
+    ) || [];
+  // const [ownerData, setOwnerData] = useState(null);
+  // const { phone } = useLocalSearchParams();
+  const { width: windowWidth, height: screenH } = useWindowDimensions();
+  const sidebarWidth = Math.max(50, windowWidth * 0.17);
+  const availableWidth = windowWidth - sidebarWidth - CONTENT_GAP - (CONTAINER_PADDING * 2);
+  const SPACING = 12;
+  const snap = availableWidth + SPACING;
+  const cardWidth = availableWidth;
+  const cardHeight = screenH * 0.58; // Balanced vertical height
+  const [sliderWidth, setSliderWidth] = useState(0);
+  const sliderRef = useRef(null);
+  const sidebarRef = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const isManualScroll = useRef(false);
+  const [filterMode, setFilterMode] = useState(null);
+  const [bedCounts, setBedCounts] = useState({});
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedFloor, setSelectedFloor] = useState(null);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [tenantName, setTenantName] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [tenantPhone, settenantPhone] = useState("");
+  const [bedNumber, setBedNumber] = useState(1);
+  const [monthlyRent, setMonthlyRent] = useState("");
+  const [checkIn, setCheckIn] = useState("");
+  const [checkOut, setCheckOut] = useState("");
+  const [tenants, setTenants] = useState({});
+  const [idProofFile, setIdProofFile] = useState("");
+  const [idProofUri, setIdProofUri] = useState("");
+  const getAbsoluteUri = (uri) => {
+    if (!uri) return null;
+    if (uri.startsWith("http")) return uri;
+    return `${BASE_URL}${uri.startsWith("/") ? "" : "/"}${uri}`;
+  };
+
+  const [idPreviewVisible, setIdPreviewVisible] = useState(false);
+  const [idPreviewHtml, setIdPreviewHtml] = useState("");
+  const [idOpenUri, setIdOpenUri] = useState("");
+  const [previewUri, setPreviewUri] = useState("");
+  const [showBottomViewId, setShowBottomViewId] = useState(false);
+  const [previewScale, setPreviewScale] = useState(1);
+  const [tenantsListModalVisible, setTenantsListModalVisible] = useState(false);
+  const [tenantsList, setTenantsList] = useState([]);
+  const [editAll] = useState(false);
+  const [editValues, setEditValues] = useState({});
+  const [rowEditIndex, setRowEditIndex] = useState(null);
+  const [rowEditValues, setRowEditValues] = useState({});
+  const [tenantsExpanded, setTenantsExpanded] = useState(true);
+  const [selectedSection, setSelectedSection] = useState(null);
+  const [pendingAllotment, setPendingAllotment] = useState(null);
+  const onPinchStateChange = (e) => {
+    if (e.nativeEvent.state === State.END) {
+      setPreviewScale((prev) => Math.min(3, Math.max(1, prev)));
+    }
+  };
+  const floorPulse = useRef(new Animated.Value(0.8)).current;
+  const floorScale = floorPulse.interpolate({
+    inputRange: [0.8, 1],
+    outputRange: [0.99, 1.01],
+  });
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floorPulse, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(floorPulse, {
+          toValue: 0.8,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, [floorPulse]);
+
+  const [touchedName, setTouchedName] = useState(false);
+  const [touchedPhone, setTouchedPhone] = useState(false);
+  const [touchedEmail, setTouchedEmail] = useState(false);
+  const [touchedRent, setTouchedRent] = useState(false);
+  const [dashboardData, setDashboardData] = useState(null);
+
+  useEffect(() => {
+    if (!phone) return;
+
+    const fetchData = async () => {
+      try {
+        const detailsRes = await fetch(
+          `${BASE_URL}/api/details/${encodeURIComponent(phone)}/`
+        );
+        const detailsData = await detailsRes.json();
+        setResponseData(detailsData);
+
+        if (detailsData.property_type === "hostel") {
+          const hostelRes = await fetch(
+            `${BASE_URL}/api/getbeds/${encodeURIComponent(phone)}/`
+          );
+          const hostelData = await hostelRes.json();
+
+          if (hostelData.data?.length > 0) {
+            const formattedTenants = {};
+            const counts = {};
+
+            hostelData.data.forEach((t) => {
+              const key = `Floor ${t.floor}-${t.roomno}`;
+              if (!formattedTenants[key]) formattedTenants[key] = [];
+              formattedTenants[key].push(t);
+            });
+
+            Object.keys(formattedTenants).forEach((key) => {
+              counts[key] = formattedTenants[key].length;
+            });
+
+            setTenants(formattedTenants);
+            setBedCounts(counts);
+          } else {
+            setTenants({});
+            setBedCounts({});
+          }
+
+        } else if (detailsData.property_type === "apartment") {
+          const apartmentRes = await fetch(
+            `${BASE_URL}/api/getapartmentbeds/${encodeURIComponent(phone)}/`
+          );
+          const apartmentData = await apartmentRes.json();
+
+          console.log("Apartment API Raw:", apartmentData);
+
+          if (apartmentData.data?.length > 0) {
+            const formattedApartments = {};
+            const counts = {};
+
+            // apartmentData.data.forEach((a) => {
+            //   const key = `Floor ${a.floor}-${a.flatno}`;
+            //   if (!formattedApartments[key]) formattedApartments[key] = [];
+            //   formattedApartments[key].push(a);
+            // });
+            apartmentData.data.forEach((a) => {
+              const key = `Floor ${a.floor}-${a.flatno}`; // Make sure flatno exists in API
+              if (!formattedApartments[key]) formattedApartments[key] = [];
+              formattedApartments[key].push(a);
+            });
+
+            // Object.keys(formattedApartments).forEach((key) => {
+            //   counts[key] = formattedApartments[key].length;
+            // });
+            Object.keys(formattedApartments).forEach((key) => {
+              counts[key] = formattedApartments[key].length;
+            });
+            // setApartments(formattedApartments);
+            // setApartmentCounts(counts);
+            setApartments(formattedApartments); // normalized state for deletion
+            setApartmentCounts(counts);
+          } else {
+            setApartments({});
+            setApartmentCounts({});
+          }
+
+        }
+
+        else if (detailsData.property_type === "commercial") {
+          const commercialRes = await fetch(
+            `${BASE_URL}/api/getcommercialbeds/${encodeURIComponent(phone)}/`
+          );
+          const commercialData = await commercialRes.json();
+
+          console.log("Commercial API Raw:", commercialData);
+
+          if (commercialData.data?.length > 0) {
+            const formattedCommercial = {};
+            const counts = {};
+
+            commercialData.data.forEach((c) => {
+              const key = `Floor ${c.floor}-${c.sectionNo}`; // ✅ IMPORTANT
+              if (!formattedCommercial[key]) formattedCommercial[key] = [];
+              formattedCommercial[key].push(c);
+            });
+
+            Object.keys(formattedCommercial).forEach((key) => {
+              counts[key] = formattedCommercial[key].length;
+            });
+
+            // ✅ reuse existing states (no extra changes needed)
+            setApartments(formattedCommercial);
+            setApartmentCounts(counts);
+          } else {
+            setApartments({});
+            setApartmentCounts({});
+          }
+        }
+
+      } catch (err) {
+        console.log("Fetch Error:", err);
+      }
+    };
+
+    fetchData();
+  }, [phone, refreshTrigger]);
+
+  useEffect(() => {
+    if (route.params?.autoFillData) {
+      setPendingAllotment(route.params.autoFillData);
+    }
+  }, [route.params?.autoFillData]);
+
+  const dataToRender =
+    stayType === "apartment" ? apartments :
+      stayType === "commercial" ? apartments :   // ✅ ADD THIS
+        tenants;
+
+  const countsToRender =
+    stayType === "apartment" ? apartmentCounts :
+      stayType === "commercial" ? apartmentCounts : // ✅ ADD
+        bedCounts;
+
+  useEffect(() => {
+    if (!modalVisible) {
+      setIdProofFile("");
+      setIdProofUri("");
+      setIdPreviewHtml("");
+      setIdPreviewVisible(false);
+    }
+  }, [modalVisible]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    isManualScroll.current = true;
+    sliderRef.current?.scrollTo({ x: 0, animated: true });
+    setTimeout(() => {
+      isManualScroll.current = false;
+    }, 350);
+  }, [filterMode]);
+  const makeRooms = (n) =>
+    Array.from(
+      { length: n === 1 ? 15 : 4 },
+      (_, i) => `${n}${String(i + 1).padStart(2, "0")}`,
+    );
+  const floors = Array.from({ length: 15 }, (_, i) => {
+    const floorNumber = i + 1;
+    return { floor: `Floor ${floorNumber}`, rooms: makeRooms(floorNumber) };
+  });
+
+  // const dynamicFloors =
+  // response_data?.building_layout?.map((f) => ({
+  //   floor: `Floor ${f.floorNo}`,
+  //   rooms: f.rooms.map(
+  //     (r) => `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`
+  //   ),
+  // })) || floors;
+  // const dynamicFloors = response_data?.building_layout
+  // ? response_data.building_layout.map((f) => ({
+  //     floor: `Floor ${f.floorNo}`,
+  //     rooms: f.rooms.map((r) => ({
+  //       roomLabel: `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`,
+  //       beds: r.beds,
+  //     })),
+  //   }))
+  // : [];
+  // const stayType = response_data?.stay_type || "hostel";
+  const stayType = response_data?.property_type || "hostel";
+  const getUnits = (floor) => {
+    if (stayType === "hostel") return floor.rooms || [];
+    if (stayType === "apartment") return floor.flats || [];
+    if (stayType === "commercial") return [floor];
+    return [];
+  };
+  // const dynamicFloors = response_data?.building_layout
+  //   ? response_data.building_layout.map((f) => {
+
+  //       if (stayType === "hostel") {
+  //         return {
+  //           floor: `Floor ${f.floorNo}`,
+  //           rooms: f.rooms.map((r) => ({
+  //             roomLabel: `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`,
+  //             beds: r.beds,
+  //           })),
+  //         };
+  //       }
+
+  //       if (stayType === "apartment") {
+  //         return {
+  //           floor: `Floor ${f.floorNo}`,
+  //           flats: f.flats.map((fl, idx) => ({
+  //             flatNo: `${f.floorNo}${String(idx + 1).padStart(2, "0")}`,
+  //             bhk: fl.type || "1BHK",
+  //           })),
+  //         };
+  //       }
+
+  //       if (stayType === "commercial") {
+  //         return {
+  //           floor: `Floor ${f.floorNo}`,
+  //           area: f.area,
+  //         };
+  //       }
+
+  //       return {};
+  //     })
+  //   : [];
+
+  const dynamicFloors =
+    stayType === "commercial"
+      ? (() => {
+        const grouped = {};
+
+        (response_data?.building_layout || []).forEach((item) => {
+          if (!grouped[item.floorNo]) {
+            grouped[item.floorNo] = [];
+          }
+
+          grouped[item.floorNo].push(item);
+        });
+
+        return Object.keys(grouped).map((floorNo) => ({
+          floor: `Floor ${floorNo}`,
+          units: grouped[floorNo].map((sec, idx) => ({
+            id: idx + 1,
+            label: `${sec.sectionNo ?? idx + 1}`,   // ✅ fallback
+            display: `Section ${sec.sectionNo ?? idx + 1}`,
+            area: sec.area_sqft,
+          }))
+        }));
+      })()
+      : response_data?.building_layout?.map((f) => {
+        if (stayType === "hostel") {
+          return {
+            floor: `Floor ${f.floorNo}`,
+            units: (f.rooms || []).map((r) => ({
+              label: `${f.floorNo}${String(r.roomNo).padStart(2, "0")}`,
+              beds: r.beds,
+            })),
+          };
+        }
+
+        if (stayType === "apartment") {
+          return {
+            floor: `Floor ${f.floorNo}`,
+            units: (f.flats || []).map((fl, idx) => ({
+              label: fl.flatNo ? String(fl.flatNo) : `${f.floorNo}${String(idx + 1).padStart(2, "0")}`,
+              type: fl?.bhk ? `${fl.bhk} BHK` : "Not Assigned",
+            })),
+          };
+        }
+
+        return { floor: `Floor ${f.floorNo}`, units: [] };
+      }) || [];
+
+  // const isOccupied = (floorLabel, room) => {
+  //   const key = `${floorLabel}-${room}`;
+  //   const count = bedCounts[key] ?? 0;
+  //   return count > 0;
+  // };
+  // const isOccupied = (floorLabel, unit) => {
+  // const key = `${floorLabel}-${unit}`;
+  // const count = bedCounts[key] ?? 0;
+  const isOccupied = (floorLabel, unitLabel) => {
+    const key = `${floorLabel}-${unitLabel}`;
+
+    const count =
+      stayType === "hostel"
+        ? bedCounts[key] ?? 0
+        : apartmentCounts[key] ?? 0; // ✅ apartment + commercial
+
+    return count > 0;
+  };
+
+
+  const getCount = (floorLabel, unitLabel) => {
+    const key = `${floorLabel}-${unitLabel}`;
+
+    return stayType === "hostel"
+      ? bedCounts[key] ?? 0
+      : apartmentCounts[key] ?? 0; // ✅ apartment + commercial
+  };
+
+  const filteredFloors = dynamicFloors.filter((f) => {
+    if (filterMode === "occupied") {
+      return (f.units || []).some((u) => isOccupied(f.floor, u.label));
+    }
+    if (filterMode === "empty") {
+      return (f.units || []).some((u) => !isOccupied(f.floor, u.label));
+    }
+    return true;
+  });
+
+  const getTileColor = (floorLabel, unitLabel) => {
+    const c = getCount(floorLabel, unitLabel);
+
+    if (filterMode === "occupied") return "#aaf8c5"; // light green
+    if (filterMode === "empty") return "#f28f8f";    // light red
+    if (filterMode === null) return "#c0b4f3";       // light violet
+
+    if (c === 0) return "#f28f8f";     // empty
+    const totalBeds = stayType === "hostel" ? getTotalBeds(floorLabel, unitLabel) : 1;
+    if (c >= totalBeds) return "#aaf8c5";      // full
+    return "#FEF3C7";                  // partial light yellow
+  };
+  const handleSelectFloor = (idx) => {
+    isManualScroll.current = true;
+    setActiveIndex(idx);
+    sliderRef.current?.scrollTo({
+      x: idx * snap,
+      animated: true,
+    });
+  };
+  const syncSidebar = (index) => {
+    const SIDE_BUTTON_HEIGHT = 44;
+    const SIDE_BUTTON_GAP = 12;
+    const offset = Math.max(
+      0,
+      idxToOffset(index, SIDE_BUTTON_HEIGHT, SIDE_BUTTON_GAP) - 100,
+    );
+    sidebarRef.current?.scrollTo({ y: offset, animated: true });
+  };
+
+  useEffect(() => {
+    syncSidebar(activeIndex);
+  }, [activeIndex]);
+  const idxToOffset = (idx, h, g) => idx * (h + g);
+
+  // const totalRooms = dynamicFloors.reduce((sum, f) => sum + f.rooms.length, 0);
+  // const totalRooms = dynamicFloors.reduce((sum, f) => {
+
+  //   if (stayType === "hostel") {
+  //     return sum + (f.rooms?.length || 0);
+  //   }
+
+  //   if (stayType === "apartment") {
+  //     return sum + (f.flats?.length || 0);
+  //   }
+
+  //   if (stayType === "commercial") {
+  //     return sum + 1;
+  //   }
+
+  //   return sum;
+
+  // }, 0);
+
+  // const occupiedRooms = dynamicFloors.reduce(
+  //   (sum, f) => sum + f.rooms.filter((r) => isOccupied(f.floor, r)).length,
+  //   0,
+  // );
+  // const emptyRooms = totalRooms - occupiedRooms;
+  const totalRooms = dynamicFloors.reduce(
+    (sum, f) => sum + (f.units?.length || 0),
+    0
+  );
+
+  const occupiedRooms = dynamicFloors.reduce(
+    (sum, f) =>
+      sum +
+      (f.units || []).filter((u) =>
+        isOccupied(f.floor, u.label)
+      ).length,
+    0
+  );
+  const handleSave = async (row, idx) => {
+    try {
+      const vv = rowEditValues[idx] || {};
+
+      const propertyType = stayType?.trim().toLowerCase(); // ✅ FIXED
+
+      const phone = vv.phone || row.phone;
+      console.log("FINAL TYPE:", propertyType);
+      console.log("FINAL URL:", url);
+      let url = "";
+
+      if (propertyType === "hostel") {
+        url = `${BASE_URL}/api/updatehostel/${phone}/`;
+      }
+      else if (propertyType === "apartment") {
+        url = `${BASE_URL}/api/updateapartment/${phone}/`;
+      }
+      else if (propertyType === "commercial") {
+        url = `${BASE_URL}/api/updatecommercial/${phone}/`;
+      }
+      else {
+        alert(`Invalid property type: "${propertyType}"`);
+        console.log("DEBUG stayType:", stayType);
+        return;
+      }
+
+      const rawPayload = { ...row, ...vv };
+
+      const payload = {
+        name: rawPayload.name,
+        phone: rawPayload.phone,
+        phone: rawPayload.phone,
+        bed: Number(rawPayload.bed),
+        floor: rawPayload.floor ? Number(rawPayload.floor) : null,
+        roomno: rawPayload.roomno ? Number(rawPayload.roomno) : null,
+        rent: rawPayload.rent ? Number(rawPayload.rent) : 0,
+        checkIn: rawPayload.checkIn,
+        checkOut: rawPayload.checkOut,
+      };
+
+      console.log("FINAL URL:", url);
+      console.log("PAYLOAD:", payload);
+
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      console.log("BACKEND ERROR:", data);
+
+      if (!response.ok) {
+        throw new Error(data.message || "Something went wrong");
+      }
+
+      alert("Saved successfully ✅");
+
+    } catch (error) {
+      console.error(error);
+      alert("Save failed ❌");
+    }
+  };
+  const emptyRooms = totalRooms - occupiedRooms;
+  // const openTenantModal = (floorLabel, room) => {
+  //   setSelectedFloor(floorLabel);
+  //   setSelectedRoom(room);
+  const openTenantModal = (floorLabel, room) => {
+    // console.log("✅ Clicked Floor:", floorLabel);
+    // console.log("✅ Clicked Room:", room);
+
+    setSelectedFloor(String(floorLabel || ""));
+    setSelectedRoom(String(room || ""));
+
+    const current = getCount(floorLabel, room);
+    setBedNumber(Math.min(4, current + 1));
+
+    if (pendingAllotment) {
+      setTenantName(pendingAllotment.name || "");
+      setContactNumber(pendingAllotment.phone || "");
+      settenantPhone(pendingAllotment.phone || "");
+      setCheckIn(pendingAllotment.checkIn || "");
+      setCheckOut(pendingAllotment.checkOut || "");
+      setMonthlyRent("");
+      setIdProofUri(pendingAllotment.idUri || "");
+    } else {
+      setTenantName("");
+      setContactNumber("");
+      settenantPhone("");
+      setMonthlyRent("");
+      setCheckIn("");
+      setCheckOut("");
+      setIdProofUri("");
+    }
+
+    setIdProofFile("");
+    setIdPreviewHtml("");
+    setIdPreviewVisible(false);
+    setTouchedName(false);
+    setTouchedPhone(false);
+    setTouchedEmail(false);
+    setTouchedRent(false);
+    setModalVisible(true);
+  };
+  const isValidName = (name) => /^[A-Za-z\s]+$/.test(name.trim());
+  const isValidPhone = (phone) => /^\d{10,11}$/.test(phone.trim());
+  const isValidEmail = (mail) =>
+    mail.trim().length === 0 || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail.trim());
+  const isFormValid = () => {
+    return (
+      isValidName(tenantName) &&
+      isValidPhone(contactNumber) &&
+      monthlyRent.trim().length > 0 &&
+      (idProofUri || idOpenUri) &&
+            bedNumber >= 1 &&
+      bedNumber <= 4
+    );
+  };
+  const addTenant = () => {
+    console.log("ADDING TENANT", {
+      tenantName,
+      contactNumber,
+      tenantPhone,
+      monthlyRent,
+      idProofUri,
+    });
+    if (!selectedFloor || !selectedRoom) {
+      setModalVisible(false);
+      return;
+    }
+    if (!isFormValid()) {
+      return;
+    }
+    const key = `${selectedFloor}-${selectedRoom}`;
+    // setTenants((prev) => {
+    //   const list = prev[key] ?? [];
+    //   const nextList = [
+    //     ...list,
+    //     {
+    //       name: tenantName.trim(),
+    //       phone: contactNumber.trim(),
+    //           //       bed: bedNumber,
+    //       rent: monthlyRent.trim(),
+    //       checkIn: checkIn.trim(),
+    //       checkOut: checkOut.trim(),
+    //       idUri: idOpenUri || idProofUri,
+    //     },
+    //   ];
+    //   return { ...prev, [key]: nextList };
+    // });
+    // setBedCounts((prev) => {
+    //   const next = Math.min(4, (prev[key] ?? 0) + 1);
+    //   return { ...prev, [key]: next };
+    // });
+    const newTenant = {
+      name: tenantName.trim(),
+      phone: contactNumber.trim(),
+            bed: bedNumber,
+      rent: monthlyRent.trim(),
+      checkIn: checkIn.trim(),
+      checkOut: checkOut.trim(),
+      idUri: idOpenUri || idProofUri,
+    };
+
+    if (stayType === "apartment" || stayType === "commercial") {
+      setApartments((prev) => {
+        const list = prev[key] ?? [];
+        return {
+          ...prev,
+          [key]: [...list, newTenant],
+        };
+      });
+
+      setApartmentCounts((prev) => {
+        const next = Math.min(4, (prev[key] ?? 0) + 1);
+        return { ...prev, [key]: next };
+      });
+    } else {
+      setTenants((prev) => {
+        const list = prev[key] ?? [];
+        return {
+          ...prev,
+          [key]: [...list, newTenant],
+        };
+      });
+
+      setBedCounts((prev) => {
+        const next = Math.min(4, (prev[key] ?? 0) + 1);
+        return { ...prev, [key]: next };
+      });
+    }
+    setIdProofFile("");
+    setIdProofUri("");
+    setIdOpenUri("");
+    setIdPreviewVisible(false);
+    setShowBottomViewId(false);
+    setModalVisible(false);
+  };
+  const removeTenant = (floorLabel, room, index) => {
+    const key = `${floorLabel}-${room}`;
+    setTenants((prev) => {
+      const list = prev[key] ?? [];
+      const nextList = list.filter((_, i) => i !== index);
+      return { ...prev, [key]: nextList };
+    });
+    setBedCounts((prev) => {
+      const next = Math.max(0, (prev[key] ?? 0) - 1);
+      return { ...prev, [key]: next };
+    });
+  }; const getTotalBeds = (floorLabel, roomLabel) => {
+    const floor = dynamicFloors.find((f) => f.floor === floorLabel);
+    const unit = floor?.units.find((u) => u.label === roomLabel);
+    return unit?.beds ?? 0;
+  };
+  //   const getTotalBeds = (floorLabel, roomLabel) => {
+  //   const floor = dynamicFloors.find((f) => f.floor === floorLabel);
+  //   const room = floor?.rooms.find((r) => r.roomLabel === roomLabel);
+  //   return room?.beds ?? 0;
+  // };
+  // console.log("Selected Floor:", selectedFloor);
+  // console.log("Selected Room:", selectedRoom);
+  // const saveTenant = async () => {
+  //   try {
+  //         // console.log("🚀 Sending:", selectedFloor, selectedRoom); // DEBUG
+
+  //     const formData = new FormData();
+
+  //     formData.append("name", tenantName);
+  //     formData.append("phone", contactNumber);
+  //       //     formData.append("bed", bedNumber);
+  //     formData.append("rent", monthlyRent);
+  //     formData.append("checkIn", checkIn);
+  //     formData.append("checkOut", checkOut);
+  // //  const floorNumber = selectedFloor
+  // //   ? selectedFloor.replace("Floor ", "")
+  // //   : "";
+  // // let floorNumber = "";
+
+  // // if (selectedFloor !== null && selectedFloor !== undefined) {
+  // //   if (typeof selectedFloor === "string") {
+  // //     floorNumber = selectedFloor.replace("Floor ", "");
+  // //   } else {
+  // //     floorNumber = selectedFloor.toString(); // 👈 IMPORTANT
+  // //   }
+  // // }
+
+  // // formData.append("floor", floorNumber);
+  // // formData.append("owner_phone", ownerPhone); // ✅ correct key
+  // console.log("Selected Floor:", selectedFloor);
+
+  // const floorNumber = selectedFloor
+  //   ? parseInt(selectedFloor.toString().replace("Floor ", ""))
+  //   : null;
+
+  // if (floorNumber !== null && !isNaN(floorNumber)) {
+  //   formData.append("floor", floorNumber);
+  // }
+
+  // // formData.append("roomno", parseInt(selectedRoom));
+  // if (stayType === "hostel") {
+  //   formData.append("roomno", parseInt(selectedRoom));
+  // }
+
+  // else if (stayType === "apartment") {
+  //   formData.append("flatno", selectedRoom); // keep as string (like 101, 102)
+  // }
+
+  // else if (stayType === "commercial") {
+  //   formData.append("sectionNo", selectedRoom); // ✅ send number instead of text
+  // }
+  // formData.append("owner_phone", ownerPhone);
+
+
+  // // formData.append("floor", floorNumber);   // ✅ now sends 1
+  // // formData.append("roomno", parseInt(selectedRoom));
+  // // formData.append("ownerPhone")
+
+  //     if (idProofUri) {
+  //       formData.append("idUri", {
+  //         uri: idProofUri,
+  //         name: "idproof.jpg",
+  //         type: "image/jpeg",
+  //       });
+  //     }
+
+  //     const response = await fetch(
+  //       "http://192.168.1.29:8000/api/tenentbeds/",
+  //       {
+  //         method: "POST",
+  //         body: formData,
+  //       }
+  //     );
+  // const res1 = await fetch(
+  //       "http://192.168.1.29:8000/api/apartmentbeds/",
+  //        {
+  //         method: "POST",
+  //         body: formData,
+  //       }
+  //     );
+  //     const data = await response.json();
+  //     console.log("Tenant saved:", data);
+  // addTenant(); 
+  //   } catch (error) {
+  //     console.log("Error saving tenant:", error);
+  //   }
+  // };
+
+
+  const saveTenant = async () => {
+    try {
+      const formData = new FormData();
+
+      formData.append("name", tenantName);
+      formData.append("phone", contactNumber);
+      formData.append("bed", bedNumber);
+      formData.append("rent", monthlyRent);
+      if (checkIn) formData.append("checkIn", checkIn);
+      if (checkOut) formData.append("checkOut", checkOut);
+
+      const floorNumber = selectedFloor
+        ? parseInt(selectedFloor.toString().replace("Floor ", ""))
+        : null;
+
+      if (floorNumber !== null && !isNaN(floorNumber)) {
+        formData.append("floor", floorNumber);
+      }
+
+      // ✅ TYPE BASED DATA
+      if (stayType === "hostel") {
+        formData.append("roomno", parseInt(selectedRoom));
+      }
+      else if (stayType === "apartment") {
+        formData.append("flatno", selectedRoom);
+      }
+
+      else if (stayType === "commercial") {
+        formData.append("sectionNo", selectedRoom); // ✅ correct
+      }
+
+
+      formData.append("owner_phone", ownerPhone);
+
+      if (idProofUri) {
+        formData.append("idUri", {
+          uri: idProofUri,
+          name: "idproof.jpg",
+          type: "image/jpeg",
+        });
+      }
+
+      // 🔥 SELECT API BASED ON TYPE
+      let url = "";
+
+      if (stayType === "hostel") {
+        url = `${BASE_URL}/api/tenentbeds/`;
+      }
+      else if (stayType === "apartment") {
+
+        url = `${BASE_URL}/api/apartmentbeds/`;
+      }
+      else if (stayType === "commercial") {
+        url = `${BASE_URL}/api/commercialbeds/`; // or your commercial API
+      }
+
+      console.log("🚀 Hitting API:", url);
+
+      // ✅ ONLY ONE API CALL
+      const response = await fetch(url, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+      console.log("Tenant saved:", data);
+
+      if (pendingAllotment?.requestId) {
+        try {
+          await fetch(`${BASE_URL}/api/update_request_status/`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: pendingAllotment.requestId,
+              status: "accepted",
+            }),
+          });
+        } catch (err) {
+          console.error("Error updating request status:", err);
+        }
+      }
+
+      addTenant();
+      setRefreshTrigger((prev) => prev + 1);
+
+      if (pendingAllotment) {
+        setPendingAllotment(null);
+        navigation.navigate("OwnerNotificationScreen", { phone });
+      }
+    } catch (error) {
+      console.log("Error saving tenant:", error);
+    }
+  };
+
+  const deleteTenant = (tenant) => {
+    Alert.alert(
+      "Remove Tenant",
+      `Are you sure you want to remove ${tenant.name} from this room?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            const type = stayType === "hostel" ? "hostel" : stayType === "apartment" ? "apartment" : "commercial";
+            const endpoint = `delete${type}`;
+            try {
+              const res = await fetch(`${BASE_URL}/api/${endpoint}/${tenant.phone}/`, {
+                method: "DELETE",
+              });
+              if (res.ok) {
+                alert("Tenant removed successfully");
+                setRefreshTrigger((prev) => prev + 1);
+                setTenantsListModalVisible(false);
+              } else {
+                alert("Failed to remove tenant");
+              }
+            } catch (err) {
+              console.error("Delete Error:", err);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const editTenant = (tenant) => {
+    setTenantsListModalVisible(false);
+
+    // Determine floor label
+    let floorLabel = selectedFloor;
+    if (tenant.floorName) {
+      floorLabel = tenant.floorName;
+    } else if (tenant.floor) {
+      floorLabel = String(tenant.floor).startsWith("Floor ") ? String(tenant.floor) : `Floor ${tenant.floor}`;
+    }
+
+    // Determine room/unit label
+    let roomLabel = selectedRoom;
+    if (tenant.roomLabel) {
+      roomLabel = tenant.roomLabel;
+    } else if (tenant.roomno) {
+      roomLabel = String(tenant.roomno);
+    } else if (tenant.flatno) {
+      roomLabel = String(tenant.flatno);
+    } else if (tenant.sectionNo) {
+      roomLabel = String(tenant.sectionNo);
+    }
+
+    const totalBeds = getTotalBeds(floorLabel, roomLabel);
+
+    navigation.navigate("OwnerEditTenantScreen", { tenant, stayType, totalBeds });
+  };
+  return (
+    <View style={{ flex: 1, backgroundColor: "#F8F8FC" }}>
+      <StatusBar hidden={true} />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 30 }}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[2]}
+      >
+        {/* HEADER HERO SECTION */}
+        <LinearGradient
+          colors={["#6C2BD9", "#8B5CF6"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerHero}
+        >
+          {/* TOP BAR */}
+          <View style={styles.headerTopRow}>
+            {/* Location Pill */}
+            <View style={styles.locationPill}>
+              <Ionicons name="location-outline" size={14} color="#FFF" />
+              <Text numberOfLines={1} style={styles.locationPillText}>
+                {response_data?.address || t('location_not_set')}
+              </Text>
+            </View>
+
+            {/* Actions */}
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate("OwnerNotificationScreen", { phone: phone })}
+                style={styles.frostedIconBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="notifications-outline" size={20} color="#FFF" />
+                {(pendingCount + (unreadNotificationsCount || 0)) > 0 && (
+                  <Animated.View style={styles.pulseBadge}>
+                    <Text style={styles.badgeText}>
+                      {pendingCount + (unreadNotificationsCount || 0)}
+                    </Text>
+                  </Animated.View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* GREETINGS ROW */}
+          <View style={styles.greetingsRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greetingTitle}>
+                Welcome Back,{"\n"}{ownerName || "Sandy"} 👋
+              </Text>
+              <View style={styles.premiumPropertyBadge}>
+                <View style={styles.pulsingIndicator} />
+                <Text style={styles.premiumPropertyText} numberOfLines={1}>
+                  {response_data?.name || response_data?.property_name || t('my_property')}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.premiumIllustrationContainer}>
+              <View style={styles.glowRing1} />
+              <View style={styles.glowRing2} />
+              <Ionicons name="business" size={38} color="#FFF" />
+            </View>
+          </View>
+
+        </LinearGradient>
+
+        {/* STATS CARDS SECTION */}
+        <View style={styles.premiumStatsRow}>
+          {/* Card 1: Total Rooms */}
+          <TouchableOpacity
+            onPress={() => setFilterMode(null)}
+            style={[
+              styles.statsCardPremium,
+              { backgroundColor: "#FFF" },
+              filterMode === null && {
+                backgroundColor: "#F5F3FF",
+                borderColor: "#cbbce4ff",
+                shadowColor: "#6C2BD9",
+                shadowOpacity: 0.25,
+                shadowRadius: 12,
+                elevation: 6,
+              },
+            ]}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.statsIconBox, { backgroundColor: "rgba(108, 43, 217, 0.1)" }]}>
+              <Ionicons name="apps" size={18} color="#6C2BD9" />
+            </View>
+            <Text style={styles.statsNumber}>{totalRooms}</Text>
+            <Text style={styles.statsLabel}>Total Rooms</Text>
+          </TouchableOpacity>
+
+          {/* Card 2: Occupied */}
+          <TouchableOpacity
+            onPress={() => setFilterMode("occupied")}
+            style={[
+              styles.statsCardPremium,
+              { backgroundColor: "#FFF" },
+              filterMode === "occupied" && {
+                backgroundColor: "#F0FDF4",
+                borderColor: "#cfeedaff",
+                shadowColor: "#22C55E",
+                shadowOpacity: 0.25,
+                shadowRadius: 12,
+                elevation: 6,
+              },
+            ]}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.statsIconBox, { backgroundColor: "rgba(34, 197, 94, 0.1)" }]}>
+              <Ionicons name="people" size={18} color="#22C55E" />
+            </View>
+            <Text style={styles.statsNumber}>{occupiedRooms}</Text>
+            <Text style={styles.statsLabel}>Occupied</Text>
+          </TouchableOpacity>
+
+          {/* Card 3: Vacant */}
+          <TouchableOpacity
+            onPress={() => setFilterMode("empty")}
+            style={[
+              styles.statsCardPremium,
+              { backgroundColor: "#FFF" },
+              filterMode === "empty" && {
+                backgroundColor: "#FEF2F2",
+                borderColor: "#e5babaff",
+                shadowColor: "#EF4444",
+                shadowOpacity: 0.25,
+                shadowRadius: 12,
+                elevation: 6,
+              },
+            ]}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.statsIconBox, { backgroundColor: "rgba(239, 68, 68, 0.1)" }]}>
+              <Ionicons name="home" size={18} color="#EF4444" />
+            </View>
+            <Text style={styles.statsNumber}>{emptyRooms}</Text>
+            <Text style={styles.statsLabel}>Vacant</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* BUILDING OVERVIEW TITLE & TOGGLE */}
+        <View style={{ backgroundColor: "#F8F8FC", paddingTop: 16, paddingBottom: 10 }}>
+          <View style={[styles.overviewHeaderRow, { marginTop: 0, marginBottom: 0 }]}>
+            <Text style={styles.overviewTitle}>Building Overview</Text>
+            <View style={styles.toggleContainer}>
+              <TouchableOpacity
+                onPress={() => setViewMode("floor")}
+                style={[styles.toggleBtn, viewMode === "floor" && styles.toggleBtnActive]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.toggleText, viewMode === "floor" && styles.toggleTextActive]}>
+                  Floor View
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setViewMode("list")}
+                style={[styles.toggleBtn, viewMode === "list" && styles.toggleBtnActive]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.toggleText, viewMode === "list" && styles.toggleTextActive]}>
+                  List View
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* CONDITIONALLY RENDER FLOOR OR LIST VIEW */}
+        {viewMode === "floor" ? (
+          <View style={styles.floorPlanRow}>
+            {filteredFloors.length === 0 ? (
+              <View style={{ flex: 1, padding: 40, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF", borderRadius: 24, marginHorizontal: 16, minHeight: 250, shadowColor: "#9E9E9E", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                <Ionicons name="business-outline" size={48} color="#C0B4F3" style={{ marginBottom: 12 }} />
+                <Text style={{ fontSize: 16, fontWeight: "600", color: "#212121", textAlign: "center" }}>
+                  No Floors with Matching Filter
+                </Text>
+                <Text style={{ fontSize: 13, color: "#757575", marginTop: 6, textAlign: "center" }}>
+                  There are currently no rooms or apartments matching "{filterMode === "occupied" ? "Occupied" : "Vacant"}".
+                </Text>
+              </View>
+            ) : (
+              <>
+                {/* LEFT FLOOR SIDEBAR */}
+                <View style={styles.floorSidebarCard}>
+                  <ScrollView
+                    ref={sidebarRef}
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingVertical: 10, alignItems: "center" }}
+                  >
+                    {filteredFloors.map((f, idx) => (
+                      <TouchableOpacity
+                        key={idx}
+                        onPress={() => handleSelectFloor(idx)}
+                        style={[
+                          styles.floorSidebarPill,
+                          activeIndex === idx && styles.floorSidebarPillActive,
+                        ]}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.floorSidebarPillText,
+                            activeIndex === idx && styles.floorSidebarPillTextActive,
+                          ]}
+                        >
+                          F{f.floor.replace("Floor ", "")}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+
+                {/* ROOM GRID SECTION */}
+                <ScrollView
+                  ref={sliderRef}
+                  horizontal
+                  snapToInterval={snap}
+                  decelerationRate="fast"
+                  scrollEventThrottle={8}
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="always"
+                  onScroll={(e) => {
+                    if (isManualScroll.current) return;
+                    const x = e.nativeEvent.contentOffset.x;
+                    const idx = Math.round(x / snap);
+                    if (idx !== activeIndex && idx >= 0 && idx < filteredFloors.length) {
+                      setActiveIndex(idx);
+                    }
+                  }}
+                  onMomentumScrollEnd={(e) => {
+                    isManualScroll.current = false;
+                    const x = e.nativeEvent.contentOffset.x;
+                    const idx = Math.round(x / snap);
+                    if (idx >= 0 && idx < filteredFloors.length) {
+                      setActiveIndex(idx);
+                      syncSidebar(idx);
+                    }
+                  }}
+                >
+                  {filteredFloors.map((item, index) => (
+                    <View
+                      key={index}
+                      style={[
+                        styles.roomGridCard,
+                        {
+                          width: cardWidth,
+                          marginRight: index === filteredFloors.length - 1 ? 0 : SPACING,
+                        },
+                      ]}
+                    >
+                      <View style={styles.roomGridHeader}>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Ionicons name="layers-outline" size={18} color="#6C2BD9" style={{ marginRight: 6 }} />
+                          <Text style={styles.roomGridTitle}>{item.floor}</Text>
+                        </View>
+                        <Text style={styles.roomGridSubtitle}>
+                          {
+                            (item.units || []).filter((unit) => {
+                              const count = getCount(item.floor, unit.label);
+                              if (filterMode === "occupied") return count > 0;
+                              if (filterMode === "empty") return count === 0;
+                              return true;
+                            }).length
+                          }{" "}
+                          {stayType === "hostel" ? "Rooms" : stayType === "apartment" ? "Flats" : "Sections"}
+                        </Text>
+                      </View>
+
+                      <ScrollView
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={{ paddingBottom: 20 }}
+                      >
+                        <View style={styles.roomCardGrid}>
+                          {(item.units || [])
+                            .filter((unit) => {
+                              const count = getCount(item.floor, unit.label);
+                              if (filterMode === "occupied") return count > 0;
+                              if (filterMode === "empty") return count === 0;
+                              return true;
+                            })
+                            .map((unit, i) => {
+                              const roomKey = `${item.floor}-${unit.label}`;
+                              const roomTenants = dataToRender[roomKey] || [];
+                              const count = roomTenants.length;
+                              const isOccupiedRoom = count > 0;
+                              const totalBeds = stayType === "hostel" ? (unit.beds || 0) : 1;
+                              const emptyBedsCount = Math.max(0, totalBeds - count);
+
+                              // Dynamic state mapping matching mockup
+                              let badgeBg = "rgba(239, 68, 68, 0.1)";
+                              let badgeTextCol = "#EF4444";
+                              let statusText = "Vacant";
+                              let dotCol = "#22C55E";
+                              let paymentLabel = "Available for rent";
+                              let bedsLabel = stayType === "hostel" ? `${count}/${unit.beds} Beds` : stayType === "apartment" ? `${unit.type}` : `${unit.area} sq.ft`;
+
+                              if (isOccupiedRoom) {
+                                const isDue = parseInt(unit.label) % 3 === 0;
+                                if (isDue) {
+                                  badgeBg = "rgba(245, 158, 11, 0.1)";
+                                  badgeTextCol = "#F59E0B";
+                                  statusText = "Due";
+                                  dotCol = "#EF4444";
+                                  paymentLabel = "Due 5 days";
+                                } else if (stayType === "hostel" && count < totalBeds) {
+                                  // Partial Occupancy
+                                  badgeBg = "rgba(245, 158, 11, 0.15)";
+                                  badgeTextCol = "#D97706";
+                                  statusText = "Partial";
+                                  dotCol = "#F59E0B";
+                                  paymentLabel = "Partially Occupied";
+                                } else {
+                                  badgeBg = "rgba(34, 197, 94, 0.1)";
+                                  badgeTextCol = "#22C55E";
+                                  statusText = "Occupied";
+                                  dotCol = "#22C55E";
+                                  paymentLabel = "Paid";
+                                }
+                              }
+
+                              // Get first tenant info
+                              const primaryTenant = roomTenants[0];
+
+                              return (
+                                <TouchableOpacity
+                                  key={unit.label || i}
+                                  style={styles.premiumRoomCard}
+                                  activeOpacity={0.8}
+                                  onPress={() => {
+                                    if (isOccupiedRoom) {
+                                      setSelectedRoom(unit.label);
+                                      setSelectedFloor(item.floor);
+                                      setTenantsList(roomTenants);
+                                      setTenantsListModalVisible(true);
+                                    } else {
+                                      openTenantModal(item.floor, unit.label);
+                                    }
+                                  }}
+                                >
+                                  {/* Top Row: Number & Status Badge */}
+                                  <View style={styles.roomCardHeader}>
+                                    <Text style={styles.roomNoText}>{unit.label}</Text>
+                                    <View style={[styles.statusBadge, { backgroundColor: badgeBg }]}>
+                                      <Text style={[styles.statusBadgeText, { color: badgeTextCol }]}>{statusText}</Text>
+                                    </View>
+                                  </View>
+
+                                  {/* Middle Row: Beds count only */}
+                                  <Text style={styles.bedsLabelText}>{bedsLabel}</Text>
+
+                                  {/* Bottom Row: Action buttons only — name shows in modal on tap */}
+                                  <View style={[styles.roomCardBottom, { justifyContent: "flex-end" }]}>
+                                    {isOccupiedRoom && emptyBedsCount === 0 ? (
+                                      <View style={[styles.actionDotsBtn, { backgroundColor: "rgba(34, 197, 94, 0.1)" }]}>
+                                        <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
+                                      </View>
+                                    ) : (
+                                      <TouchableOpacity
+                                        onPress={(e) => {
+                                          e.stopPropagation();
+                                          openTenantModal(item.floor, unit.label);
+                                        }}
+                                        style={styles.cardAddBtn}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Ionicons name="add" size={16} color="#6C2BD9" />
+                                      </TouchableOpacity>
+                                    )}
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        ) : (
+          /* LIST VIEW SECTION */
+          <View style={styles.listViewContainer}>
+            {(() => {
+              // 1. Get filtered list of tenants based on filterMode
+              const tenantsList = Object.entries(dataToRender).flatMap(([key, list]) => {
+                const [floorName, roomLabel] = key.split("-");
+                if (filterMode === "empty") {
+                  return [];
+                }
+                return list.map((t) => ({
+                  ...t,
+                  roomKey: key,
+                  floorName,
+                  roomLabel,
+                }));
+              });
+
+              // 2. If no tenants in this mode, show beautiful empty states
+              if (tenantsList.length === 0) {
+                if (filterMode === "empty") {
+                  return (
+                    <View style={styles.emptyListCard}>
+                      <Ionicons name="home-outline" size={48} color="#EF4444" style={{ marginBottom: 12 }} />
+                      <Text style={[styles.emptyListText, { fontWeight: "bold", color: "#111827" }]}>
+                        No occupants in vacant units
+                      </Text>
+                      <Text style={[styles.emptyListText, { fontSize: 13, color: "#6B7280", marginTop: 4 }]}>
+                        Switch to Floor View to allot these vacant units.
+                      </Text>
+                    </View>
+                  );
+                }
+                return (
+                  <View style={styles.emptyListCard}>
+                    <Ionicons name="people-outline" size={48} color="#9CA3AF" style={{ marginBottom: 12 }} />
+                    <Text style={styles.emptyListText}>No tenants registered in the building</Text>
+                  </View>
+                );
+              }
+
+              // 3. Render the filtered list of tenants
+              return tenantsList.map((t, idx) => (
+                <View key={`${t.roomKey}-${idx}`} style={styles.listTenantCard}>
+                  <View style={styles.listTenantTop}>
+                    <View style={styles.listAvatar}>
+                      <Text style={styles.listAvatarText}>
+                        {(t.name || "T").charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.listTenantName}>{t.name}</Text>
+                      <Text style={styles.listTenantDetails}>
+                        {t.floorName} • {stayType === "hostel" ? `Room ${t.roomLabel}` : stayType === "apartment" ? `Flat ${t.roomLabel}` : `Section ${t.roomLabel}`}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const tel = `tel:${t.phone}`;
+                        Linking.openURL(tel).catch(() => { });
+                      }}
+                      style={styles.listCallBtn}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="call" size={18} color="#22C55E" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.listSeparator} />
+
+                  <View style={styles.listTenantBottom}>
+                    <View style={{ flexDirection: "row", gap: 12 }}>
+                      {!!t.rent && (
+                        <View style={styles.listMetaPill}>
+                          <Ionicons name="cash" size={14} color="#6C2BD9" />
+                          <Text style={styles.listMetaText}>₹{t.rent}</Text>
+                        </View>
+                      )}
+                      {!!t.bed && stayType === "hostel" && (
+                        <View style={styles.listMetaPill}>
+                          <Ionicons name="bed" size={14} color="#8B5CF6" />
+                          <Text style={styles.listMetaText}>Bed {t.bed}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      <TouchableOpacity
+                        onPress={() => editTenant(t)}
+                        style={[styles.listActionBtn, { backgroundColor: "rgba(108, 43, 217, 0.08)" }]}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="create-outline" size={16} color="#6C2BD9" />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => deleteTenant(t)}
+                        style={[styles.listActionBtn, { backgroundColor: "rgba(239, 68, 68, 0.08)" }]}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              ));
+            })()}
+          </View>
+        )}
+      </ScrollView>
+
+      <Modal transparent={false} visible={modalVisible} animationType="slide" presentationStyle="fullScreen">
+        <View style={[styles.modalOverlay, { backgroundColor: COLORS.WHITE }]}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeaderBar}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalTitle, { fontSize: 22, color: COLORS.WHITE, fontWeight: "800" }]}>
+                    {selectedRoom ? (stayType === "hostel" ? `Room ${selectedRoom}` : stayType === "apartment" ? `Flat ${selectedRoom}` : `Section ${selectedRoom}`) : "Registration"}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+                    <Ionicons name="layers-outline" size={14} color="rgba(255,255,255,0.8)" />
+                    <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600", marginLeft: 4 }}>
+                      {selectedFloor ? (String(selectedFloor).includes("Floor") ? selectedFloor : `Floor ${selectedFloor}`) : "No Floor"}
+                    </Text>
+                    {ownerPhone && (
+                      <>
+                        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.4)", marginHorizontal: 8 }} />
+                        <Ionicons name="mail-outline" size={14} color="rgba(255,255,255,0.8)" />
+                        <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600", marginLeft: 4 }}>{ownerPhone}</Text>
+                      </>
+                    )}
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.modalCloseBtn, { backgroundColor: "rgba(255,255,255,0.2)" }]}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Ionicons name="close" size={24} color={COLORS.WHITE} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={styles.modalContentScroll}
+                contentContainerStyle={{ paddingBottom: 40 }}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="always"
+              >
+                <View style={[styles.modalStatsCards, { paddingHorizontal: 0, paddingTop: 8 }]}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const list = (stayType === "hostel" ? tenants : apartments)[`${selectedFloor}-${selectedRoom}`] ?? [];
+                      setTenantsList(list);
+                      setTenantsListModalVisible(true);
+                    }}
+                    style={[styles.statBadge, { backgroundColor: "#F3E8FF", paddingVertical: 10 }]}
+                  >
+                    <Text style={[styles.statBadgeLabel, { color: COLORS.PRIMARY, fontSize: 10, marginBottom: 2 }]}>CURRENT TENANTS</Text>
+                    <Text style={[styles.statBadgeValue, { color: COLORS.PRIMARY, fontSize: 16 }]}>
+                      {getCount(selectedFloor ?? "", selectedRoom ?? "")} Active
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={[styles.statBadge, { backgroundColor: "#DCFCE7" }]}>
+                    <Text style={[styles.statBadgeLabel, { color: COLORS.SUCCESS }]}>Available</Text>
+                    <Text style={[styles.statBadgeValue, { color: COLORS.SUCCESS }]}>
+                      {stayType === "hostel" ?
+                        `${Math.max(0, getTotalBeds(selectedFloor ?? "", selectedRoom ?? "") - getCount(selectedFloor ?? "", selectedRoom ?? ""))} Beds` :
+                        "1 Unit"}
+                    </Text>
+                  </View>
+                </View>
+                {/* Section Header hidden per user request as it's redundant with the button above */}
+                {/* <View style={styles.modalSectionHeader}>
+                  ...
+                </View> */}
+
+                <View style={{ height: 10 }} />
+                <View style={{ height: 10 }} />
+                {/* Personal Information Card */}
+                <View style={[styles.formSection, styles.cardPersonal]}>
+                  <View style={styles.formSectionTitle}>
+                    <Ionicons name="person-circle" size={24} color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
+                    <Text style={[styles.formSectionTitle, { marginBottom: 0 }]}>Personal Information</Text>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Full Name</Text>
+                    <View style={[styles.inputWrapper, touchedName && !isValidName(tenantName) && styles.inputErrorBorder]}>
+                      <Ionicons name="person-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+                      <TextInput
+                        value={tenantName}
+                        onChangeText={(t) => { if (/^[A-Za-z\s]*$/.test(t)) setTenantName(t); }}
+                        onBlur={() => setTouchedName(true)}
+                        style={styles.modernInput}
+                        placeholder="Full Name"
+                        placeholderTextColor={COLORS.TEXT_LIGHT}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.rowContainer}>
+                    <View style={[styles.inputGroup, styles.flex1]}>
+                      <Text style={styles.inputLabel}>Contact Number</Text>
+                      <View style={[styles.inputWrapper, touchedPhone && !isValidPhone(contactNumber) && styles.inputErrorBorder]}>
+                        <Ionicons name="call-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+                        <TextInput
+                          value={contactNumber}
+                          onChangeText={(t) => setContactNumber(t.replace(/[^0-9]/g, "").slice(0, 11))}
+                          onBlur={() => setTouchedPhone(true)}
+                          style={styles.modernInput}
+                          placeholder="Phone No"
+                          keyboardType="numeric"
+                          maxLength={11}
+                        />
+                      </View>
+                    </View>
+                  </View>
+
+                  
+                </View>
+
+                {/* Room & Bed Assignment Card */}
+                <View style={[styles.formSection, styles.cardRoom]}>
+                  <View style={styles.formSectionTitle}>
+                    <Ionicons name="business-outline" size={24} color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
+                    <Text style={[styles.formSectionTitle, { marginBottom: 0 }]}>Room Assignment</Text>
+                  </View>
+
+                  <View style={[styles.rowContainer, { marginTop: 10 }]}>
+                    <View style={[styles.inputGroup, styles.flex1]}>
+                      <Text style={styles.inputLabel}>Floor</Text>
+                      <View style={[styles.inputWrapper, { backgroundColor: "#F9FAFB" }]}>
+                        <Ionicons name="layers-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+                        <Text style={[styles.modernInput, { color: COLORS.TEXT_PRIMARY, textAlignVertical: "center" }]}>
+                          {selectedFloor ? String(selectedFloor).replace("Floor ", "") : "--"}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.inputGroup, styles.flex1]}>
+                      <Text style={styles.inputLabel}>
+                        {stayType === "hostel" ? "Room" : stayType === "apartment" ? "Flat" : "Section"}
+                      </Text>
+                      <View style={[styles.inputWrapper, { backgroundColor: "#F9FAFB" }]}>
+                        <Ionicons name="home-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+                        <Text style={[styles.modernInput, { color: COLORS.TEXT_PRIMARY, textAlignVertical: "center" }]}>
+                          {selectedRoom ? String(selectedRoom).replace("Section ", "").replace("Room ", "").replace("Flat ", "") : "--"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {stayType === "hostel" && (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={styles.inputLabel}>Select Available Bed</Text>
+                      <View style={styles.bedSelectionGrid}>
+                        {(() => {
+                          const occupied = (tenants[`${selectedFloor}-${selectedRoom}`] ?? []).map((x) => x.bed);
+                          const totalBeds = getTotalBeds(selectedFloor, selectedRoom);
+                          return Array.from({ length: totalBeds }, (_, i) => i + 1).map((b) => {
+                            const isOcc = occupied.includes(b);
+                            const isSelected = bedNumber === b;
+                            return (
+                              <TouchableOpacity
+                                key={b}
+                                style={[
+                                  styles.bedCard,
+                                  isSelected && styles.bedCardSelected,
+                                  isOcc && styles.bedCardOccupied,
+                                  !isOcc && !isSelected && { borderColor: "#E5E7EB", borderWidth: 1 }
+                                ]}
+                                onPress={() => !isOcc && setBedNumber(b)}
+                                disabled={isOcc}
+                                activeOpacity={0.7}
+                              >
+                                <Ionicons
+                                  name={isOcc ? "person" : "bed"}
+                                  size={24}
+                                  color={isSelected ? COLORS.WHITE : (isOcc ? COLORS.TEXT_LIGHT : COLORS.PRIMARY)}
+                                />
+                                <Text style={[
+                                  styles.bedCardText,
+                                  isSelected && styles.bedCardTextSelected,
+                                  isOcc && { color: COLORS.TEXT_LIGHT, fontSize: 10, marginTop: 2 }
+                                ]}>
+                                  {isOcc ? "Occupied" : `Bed ${b}`}
+                                </Text>
+                                {isSelected && !isOcc && (
+                                  <View style={styles.selectedBadge}>
+                                    <Ionicons name="checkmark" size={10} color={COLORS.PRIMARY} />
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          });
+                        })()}
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {/* Lease & Terms Card */}
+                <View style={[styles.formSection, styles.cardLease]}>
+                  <View style={styles.formSectionTitle}>
+                    <Ionicons name="document-lock-outline" size={24} color={COLORS.PRIMARY} style={{ marginRight: 10 }} />
+                    <Text style={[styles.formSectionTitle, { marginBottom: 0 }]}>Lease & Identity</Text>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Monthly Rent (₹)</Text>
+                    <View style={[styles.inputWrapper, touchedRent && monthlyRent.trim().length === 0 && styles.inputErrorBorder]}>
+                      <Ionicons name="cash-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+                      <TextInput
+                        value={monthlyRent}
+                        onChangeText={(t) => setMonthlyRent(t.replace(/[^0-9]/g, ""))}
+                        onBlur={() => setTouchedRent(true)}
+                        style={styles.modernInput}
+                        placeholder="Expected Rent Amount"
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.rowContainer}>
+                    <View style={[styles.inputGroup, styles.flex1]}>
+                      <Text style={styles.inputLabel}>Check-in Date</Text>
+                      <View style={styles.inputWrapper}>
+                        <Ionicons name="calendar-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+                        <TextInput
+                          value={checkIn}
+                          onChangeText={(t) => setCheckIn(t.replace(/[^\d/-]/g, ""))}
+                          style={styles.modernInput}
+                          placeholder="YYYY-MM-DD"
+                        />
+                      </View>
+                    </View>
+                    <View style={[styles.inputGroup, styles.flex1]}>
+                      <Text style={styles.inputLabel}>Check-out Date</Text>
+                      <View style={styles.inputWrapper}>
+                        <Ionicons name="calendar-outline" size={20} color={COLORS.PRIMARY} style={styles.inputIcon} />
+                        <TextInput
+                          value={checkOut}
+                          onChangeText={(t) => setCheckOut(t.replace(/[^\d/-]/g, ""))}
+                          style={styles.modernInput}
+                          placeholder="Optional"
+                        />
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Identity Verification</Text>
+                    {(idProofUri || idOpenUri) ? (
+                      <View style={[styles.idMiniPreview, { padding: 8, borderRadius: 12 }]}>
+                        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(39, 174, 96, 0.1)", alignItems: "center", justifyContent: "center" }}>
+                          <Ionicons name="shield-checkmark" size={18} color={COLORS.SUCCESS} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={[styles.idMiniPreviewText, { fontSize: 12, marginLeft: 0 }]} numberOfLines={1}>
+                            ID Verified & Secure
+                          </Text>
+                          <Text style={{ fontSize: 10, color: COLORS.TEXT_LIGHT }}>Document attached</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.viewIdBtn, { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }]}
+                          onPress={async () => {
+                            setPreviewUri(getAbsoluteUri(idOpenUri || idProofUri));
+                            setIdPreviewVisible(true);
+                          }}
+                        >
+                          <Text style={[styles.viewIdText, { fontSize: 10 }]}>VIEW</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setIdProofUri("");
+                            setIdOpenUri("");
+                          }}
+                          style={{ marginLeft: 8 }}
+                        >
+                          <Ionicons name="trash-outline" size={20} color={COLORS.ERROR} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.uploadAction, { padding: 10, borderRadius: 12 }]}
+                        activeOpacity={0.7}
+                        onPress={async () => {
+                          try {
+                            const res = await DocumentPicker.getDocumentAsync({
+                              type: ["image/*", "application/pdf"],
+                            });
+                            if (!res.canceled) {
+                              setIdProofFile(res.assets[0].name);
+                              setIdProofUri(res.assets[0].uri);
+                            }
+                          } catch (err) {
+                            console.log("Picker error:", err);
+                          }
+                        }}
+                      >
+                        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: "rgba(95, 37, 159, 0.1)", alignItems: "center", justifyContent: "center" }}>
+                          <Ionicons name="cloud-upload-outline" size={20} color={COLORS.PRIMARY} />
+                        </View>
+                        <View style={{ marginLeft: 12 }}>
+                          <Text style={[styles.uploadActionText, { fontSize: 14, marginLeft: 0 }]}>Upload Identity Proof</Text>
+                          <Text style={{ fontSize: 11, color: COLORS.TEXT_LIGHT }}>PDF or Image preferred</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.submitBtn, !isFormValid() && styles.submitBtnDisabled]}
+                  onPress={() => saveTenant()}
+                  disabled={!isFormValid()}
+                >
+                  <Text style={styles.submitBtnText}>Confirm Registration</Text>
+                  <Ionicons name="checkmark-done" size={24} color={COLORS.WHITE} />
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ID Preview Modal */}
+      <Modal transparent visible={idPreviewVisible} animationType="fade">
+        <View style={styles.previewOverlay}>
+          <View style={styles.previewCard}>
+            <View style={styles.previewHeader}>
+              <Text style={[styles.modalTitle, { color: COLORS.TEXT_PRIMARY }]}>ID Preview</Text>
+              <View style={styles.previewZoomControls}>
+                <TouchableOpacity
+                  style={styles.zoomIconBtn}
+                  onPress={() => setPreviewScale(Math.max(1, previewScale - 0.2))}
+                >
+                  <Ionicons name="remove" size={20} color={COLORS.PRIMARY} />
+                </TouchableOpacity>
+                <Text style={styles.zoomIndicator}>{Math.round(previewScale * 100)}%</Text>
+                <TouchableOpacity
+                  style={styles.zoomIconBtn}
+                  onPress={() => setPreviewScale(Math.min(3, previewScale + 0.2))}
+                >
+                  <Ionicons name="add" size={20} color={COLORS.PRIMARY} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setIdPreviewVisible(false)}
+                  style={{ marginLeft: 8 }}
+                >
+                  <Ionicons name="close-circle" size={32} color={COLORS.TEXT_LIGHT} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <PinchGestureHandler
+              onGestureEvent={(e) => {
+                const scale = e.nativeEvent.scale ?? 1;
+                setPreviewScale((prev) => Math.min(3, Math.max(1, prev * scale)));
+              }}
+              onHandlerStateChange={onPinchStateChange}
+            >
+              <View style={styles.previewContent}>
+                <ScrollView
+                  contentContainerStyle={{ alignItems: "center" }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {previewUri ? (
+                    previewUri.toLowerCase().endsWith(".pdf") ? (
+                      <WebView
+                        source={{
+                          uri: Platform.OS === "android" && /^https?:/i.test(previewUri)
+                            ? "https://docs.google.com/gview?embedded=true&url=" + encodeURIComponent(previewUri)
+                            : previewUri,
+                        }}
+                        style={{
+                          width: Dimensions.get("window").width - 80,
+                          height: 400 * previewScale,
+                        }}
+                      />
+                    ) : (
+                      <Image
+                        source={{ uri: previewUri }}
+                        style={{
+                          width: Dimensions.get("window").width - 40,
+                          height: 400 * previewScale,
+                        }}
+                        resizeMode="contain"
+                      />
+                    )
+                  ) : (
+                    <Text style={{ padding: 20 }}>No preview available</Text>
+                  )}
+                </ScrollView>
+              </View>
+            </PinchGestureHandler>
+          </View>
+        </View>
+      </Modal>
+      {/* NEW: Tenants List Modal */}
+      <Modal
+        visible={tenantsListModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setTenantsListModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 20 }}>
+          <View style={{ backgroundColor: "#FFF", width: "100%", maxHeight: "80%", borderRadius: 24, overflow: "hidden" }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" }}>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: COLORS.TEXT_PRIMARY }}>Current Tenants</Text>
+              <TouchableOpacity onPress={() => setTenantsListModalVisible(false)}>
+                <Ionicons name="close-circle" size={28} color={COLORS.TEXT_LIGHT} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 15 }} contentContainerStyle={{ paddingBottom: 20 }}>
+              {tenantsList.length > 0 ? tenantsList.map((t, idx) => (
+                <View key={idx} style={{ marginBottom: 12, backgroundColor: "#F9FAFB", padding: 16, borderRadius: 16 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <View>
+                      <Text style={{ fontSize: 16, fontWeight: "700", color: COLORS.TEXT_PRIMARY }}>{t.name}</Text>
+                      <Text style={{ fontSize: 13, color: COLORS.TEXT_SECONDARY, marginTop: 2 }}>Bed {t.bed}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const tel = `tel:${t.phone}`;
+                        Linking.openURL(tel).catch(() => { });
+                      }}
+                      style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(39, 174, 96, 0.1)", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <Ionicons name="call" size={20} color={COLORS.SUCCESS} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ height: 1, backgroundColor: "#EEE", marginVertical: 12 }} />
+
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <View style={{ flexDirection: "row", gap: 15 }}>
+                      {!!t.rent && (
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Ionicons name="cash-outline" size={14} color={COLORS.PRIMARY} style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 14, fontWeight: "600", color: COLORS.PRIMARY }}>₹{t.rent}</Text>
+                        </View>
+                      )}
+                      {!!t.idUri && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setPreviewUri(getAbsoluteUri(t.idUri));
+                            setIdPreviewVisible(true);
+                          }}
+                          style={{ flexDirection: "row", alignItems: "center" }}
+                        >
+                          <Ionicons name="id-card-outline" size={14} color="#E74C3C" style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 14, fontWeight: "600", color: "#E74C3C" }}>ID</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      <TouchableOpacity
+                        onPress={() => editTenant(t)}
+                        style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(95, 37, 159, 0.05)", alignItems: "center", justifyContent: "center" }}
+                      >
+                        <Ionicons name="create-outline" size={18} color={COLORS.PRIMARY} />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => deleteTenant(t)}
+                        style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(231, 76, 60, 0.05)", alignItems: "center", justifyContent: "center" }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color="#E74C3C" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              )) : (
+                <View style={{ alignItems: "center", paddingVertical: 40 }}>
+                  <Ionicons name="people-outline" size={48} color="#D1D5DB" />
+                  <Text style={{ marginTop: 12, color: COLORS.TEXT_SECONDARY }}>No tenants currently in this room.</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Language Selection Modal */}
+
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f7eeee",
+    padding: 10,
+  },
+  welcome: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: COLORS.TEXT_PRIMARY,
+    marginTop: 5,
+    letterSpacing: -0.5,
+  },
+  contentRow: {
+    flexDirection: "row",
+    gap: 8, // Reduced gap
+    marginTop: 12, // Slightly tighter
+  },
+  sidebar: {
+    width: Dimensions.get("window").width * 0.17,
+    height: Dimensions.get("window").height * 0.58, // Match cardHeight
+    borderRadius: 24,
+    backgroundColor: COLORS.WHITE,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    gap: 15,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  sideButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: COLORS.WHITE,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#F3F4FB",
+    marginVertical: 4, // Spaced out
+  },
+  sideButtonActive: {
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY,
+    shadowColor: COLORS.PRIMARY,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sideButtonText: {
+    fontSize: 16,
+    color: COLORS.TEXT_SECONDARY,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  sideButtonTextActive: {
+    color: COLORS.WHITE,
+  },
+  sideBarProgress: {
+    width: "100%",
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#E5E7EB",
+    marginTop: 6,
+    overflow: "hidden",
+  },
+  sideBarProgressFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    backgroundColor: "#f7eeee", // Match main background
+    zIndex: 5,
+  },
+  slider: {
+    flex: 1,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  cardScroll: {
+    flex: 1,
+  },
+  subHeader: {
+    fontSize: 62,
+    color: "gray",
+    marginBottom: 20,
+  },
+  statsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    gap: 10,
+    paddingHorizontal: 15, // Added space before/after boxes
+  },
+  statBox: {
+    flex: 1,
+    minHeight: 85, // Slimmer boxes
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  statIconContainer: {
+    width: 28, // Smaller icons
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  statNumber: {
+    fontSize: 18, // Slightly smaller text
+    fontWeight: "800",
+    color: COLORS.TEXT_PRIMARY,
+  },
+  statLabel: {
+    fontSize: 10,
+    color: COLORS.TEXT_SECONDARY,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    marginTop: 0,
+    letterSpacing: 0.3,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: COLORS.TEXT_PRIMARY,
+    letterSpacing: -0.5,
+  },
+  floorTitle: {
+    marginTop: 0,
+    marginBottom: 8,
+    fontWeight: "700",
+    color: "#222",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendText: {
+    fontSize: 12,
+    color: "#666",
+    marginRight: 12,
+  },
+  roomGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  roomBox: {
+    width: "30.5%",
+    aspectRatio: 1,
+    padding: 10,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  roomNumber: {
+    color: COLORS.WHITE,
+    fontWeight: "900",
+    fontSize: 15,
+    textShadowColor: "rgba(0,0,0,0.1)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  roomText: {
+    color: COLORS.WHITE,
+    fontSize: 9.5,
+    fontWeight: "700",
+    opacity: 0.9,
+    marginTop: 1,
+  },
+  plus: {
+    color: "#fff",
+    fontSize: 16,
+    marginTop: 5,
+  },
+  controlsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 8,
+  },
+  controlBtn: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalCard: {
+    backgroundColor: COLORS.BACKGROUND,
+    flex: 1,
+    overflow: "hidden",
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: COLORS.WHITE,
+    letterSpacing: 0.5,
+  },
+  modalCloseBtn: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    padding: 6,
+    borderRadius: 12,
+  },
+  modalHeaderBar: {
+    paddingTop: Platform.OS === "ios" ? 40 : 15,
+    backgroundColor: COLORS.PRIMARY,
+    paddingBottom: 25,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: COLORS.PRIMARY,
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 8,
+  },
+  modalStatsCards: {
+    flexDirection: "row",
+    gap: 12,
+    paddingTop: 12,
+    marginBottom: 10,
+  },
+  statBadge: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+  statBadgeLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  statBadgeValue: {
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  modalContentScroll: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+  formSection: {
+    backgroundColor: COLORS.WHITE,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.02)",
+  },
+  cardPersonal: {
+    backgroundColor: COLORS.WHITE,
+    borderColor: "rgba(95, 37, 159, 0.1)", // PRIMARY with low opacity
+    borderWidth: 1,
+  },
+  cardRoom: {
+    backgroundColor: COLORS.WHITE,
+    borderColor: "rgba(95, 37, 159, 0.1)",
+    borderWidth: 1,
+  },
+  cardLease: {
+    backgroundColor: COLORS.WHITE,
+    borderColor: "rgba(95, 37, 159, 0.1)",
+    borderWidth: 1,
+  },
+  formSectionTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: COLORS.TEXT_SECONDARY,
+    marginBottom: 6,
+    marginLeft: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.WHITE,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+    shadowColor: "#000",
+    shadowOpacity: 0.02,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  modernInput: {
+    flex: 1,
+    fontSize: 16,
+    color: COLORS.TEXT_PRIMARY,
+    fontWeight: "600",
+  },
+  inputErrorBorder: {
+    borderWidth: 1.5,
+    borderColor: COLORS.ERROR,
+  },
+  rowContainer: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  flex1: {
+    flex: 1,
+  },
+  bedSelectionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  bedCard: {
+    width: "22%",
+    aspectRatio: 1,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: COLORS.WHITE,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    position: "relative",
+  },
+  bedCardSelected: {
+    backgroundColor: COLORS.PRIMARY,
+    transform: [{ scale: 1.05 }],
+    shadowColor: COLORS.PRIMARY,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  bedCardOccupied: {
+    backgroundColor: "#F3F4F6",
+    opacity: 0.6,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderStyle: "dashed",
+  },
+  bedCardText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: COLORS.TEXT_PRIMARY,
+    marginTop: 4,
+  },
+  bedCardTextSelected: {
+    color: COLORS.WHITE,
+  },
+  selectedBadge: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.WHITE,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  uploadAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.7)",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: COLORS.PRIMARY,
+  },
+  uploadActionText: {
+    marginLeft: 10,
+    color: COLORS.PRIMARY,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  idMiniPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.WHITE,
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.SUCCESS,
+  },
+  idMiniPreviewText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.SUCCESS,
+    fontWeight: "600",
+    marginLeft: 10,
+  },
+  viewIdBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: COLORS.SUCCESS,
+    borderRadius: 8,
+  },
+  viewIdText: {
+    color: COLORS.WHITE,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  submitBtn: {
+    backgroundColor: COLORS.PRIMARY,
+    borderRadius: 12,
+    height: 54,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 32,
+    shadowColor: COLORS.PRIMARY,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  submitBtnDisabled: {
+    backgroundColor: COLORS.TEXT_LIGHT,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  submitBtnText: {
+    color: COLORS.WHITE,
+    fontSize: 18,
+    fontWeight: "800",
+    marginRight: 10,
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  previewCard: {
+    width: "95%",
+    backgroundColor: COLORS.WHITE,
+    borderRadius: 30,
+    overflow: "hidden",
+    maxHeight: "85%",
+  },
+  previewHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "#F9FAFB",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
+  },
+  previewZoomControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 15,
+  },
+  zoomIndicator: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: COLORS.PRIMARY,
+    minWidth: 50,
+    textAlign: "center",
+  },
+  zoomIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.WHITE,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  previewContent: {
+    padding: 10,
+    backgroundColor: "#F3F4F6",
+  },
+  badge: {
+    position: "absolute",
+    right: -6,
+    top: -4,
+    backgroundColor: COLORS.ERROR,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    minWidth: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badgeText: {
+    color: COLORS.WHITE,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  tenantCard: {
+    backgroundColor: COLORS.WHITE,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.02)",
+  },
+  tenantName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: COLORS.TEXT_PRIMARY,
+  },
+  tenantMeta: {
+    fontSize: 13,
+    color: COLORS.TEXT_SECONDARY,
+    fontWeight: "600",
+  },
+  tenantDelete: {
+    fontSize: 18,
+    color: COLORS.ERROR,
+    paddingHorizontal: 8,
+  },
+  emptyTenants: {
+    color: COLORS.TEXT_LIGHT,
+    fontSize: 14,
+    fontStyle: "italic",
+    textAlign: "center",
+    marginVertical: 10,
+  },
+  // --- PREMIUM REDESIGN STYLES ---
+  headerHero: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 56 : 44,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
+    shadowColor: "#6C2BD9",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  locationPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    maxWidth: "60%",
+  },
+  locationPillText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  frostedIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  pulseBadge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    backgroundColor: "#EF4444",
+    borderRadius: 9,
+    width: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#6C2BD9",
+  },
+  greetingsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 18,
+  },
+  greetingTitle: {
+    color: "#FFF",
+    fontSize: 23,
+    fontWeight: "800",
+    lineHeight: 28,
+    letterSpacing: -0.5,
+  },
+  greetingSub: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 13,
+    marginTop: 6,
+    fontWeight: "500",
+  },
+  premiumPropertyBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    borderWidth: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+    marginTop: 6,
+    maxWidth: "100%",
+  },
+  pulsingIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#22C55E",
+    marginRight: 8,
+  },
+  premiumPropertyText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  premiumIllustrationContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  glowRing1: {
+    position: "absolute",
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  glowRing2: {
+    position: "absolute",
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.04)",
+  },
+  inlineCardAddBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(108, 43, 217, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  buildingIllustration: {
+    width: 80,
+    height: 80,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  glassAlert: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 20,
+  },
+  glassAlertLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  checkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#FFF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  glassAlertText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "600",
+    flex: 1,
+  },
+  glassAlertTime: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 10,
+    fontWeight: "500",
+    marginLeft: 8,
+  },
+  premiumStatsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginTop: 16,
+    zIndex: 200,
+  },
+  statsCardPremium: {
+    flex: 1,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    marginHorizontal: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 2.5,
+    borderColor: "#FFF",
+  },
+  statsIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  statsLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#6B7280",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  statsNumber: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1F2937",
+    lineHeight: 22,
+  },
+  overviewHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginTop: 24,
+    marginBottom: 10,
+  },
+  overviewTitle: {
+    fontSize: 23,
+    fontWeight: "800",
+    color: "#1E1B4B",
+    letterSpacing: -0.5,
+  },
+  toggleContainer: {
+    flexDirection: "row",
+    backgroundColor: "#EEF2F6",
+    borderRadius: 20,
+    padding: 3,
+  },
+  toggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 17,
+  },
+  toggleBtnActive: {
+    backgroundColor: "#6C2BD9",
+    shadowColor: "#6C2BD9",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6B7280",
+  },
+  toggleTextActive: {
+    color: "#FFF",
+  },
+  floorPlanRow: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  floorSidebarCard: {
+    width: 50,
+    backgroundColor: "#FFF",
+    borderRadius: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 3,
+    paddingVertical: 8,
+    alignItems: "center",
+    height: Dimensions.get("window").height - 150,
+  },
+  floorSidebarPill: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F8F8FC",
+    borderColor: "#E5E7EB",
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    marginVertical: 4,
+  },
+  floorSidebarPillActive: {
+    backgroundColor: "#6C2BD9",
+    borderColor: "#6C2BD9",
+    shadowColor: "#6C2BD9",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  floorSidebarPillText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#4B5563",
+  },
+  floorSidebarPillTextActive: {
+    color: "#FFF",
+  },
+  roomGridCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 28,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 4,
+    height: Dimensions.get("window").height - 150,
+  },
+  roomGridHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EEF2F6",
+    paddingBottom: 10,
+  },
+  roomGridTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1E1B4B",
+  },
+  roomGridSubtitle: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    fontWeight: "600",
+  },
+  roomCardGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  premiumRoomCard: {
+    width: "48%",
+    backgroundColor: "#FFF",
+    borderColor: "#EEF2F6",
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  roomCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  roomNoText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#6C2BD9",
+  },
+  statusBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  bedsLabelText: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  paymentStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  paymentLabelText: {
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+  cardSeparator: {
+    height: 1,
+    backgroundColor: "#EEF2F6",
+    marginVertical: 8,
+  },
+  roomCardBottom: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  occupantRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 4,
+  },
+  avatarCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 6,
+  },
+  avatarText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  occupantName: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1F2937",
+    flex: 1,
+  },
+  availableText: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontWeight: "600",
+    fontStyle: "italic",
+    flex: 1,
+  },
+  actionDotsBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(107, 114, 128, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cardAddBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(108, 43, 217, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  listViewContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  listTenantCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 24,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  listTenantTop: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  listAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#6C2BD9",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  listAvatarText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  listTenantName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1F2937",
+  },
+  listTenantDetails: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  listCallBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  listSeparator: {
+    height: 1,
+    backgroundColor: "#F3F4F6",
+    marginVertical: 12,
+  },
+  listTenantBottom: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  listMetaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  listMetaText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#4B5563",
+    marginLeft: 4,
+  },
+  listActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyListCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 24,
+    padding: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.02,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  emptyListText: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "600",
+    marginTop: 10,
+    textAlign: "center",
+  },
+  shortcutsSection: {
+    marginTop: 24,
+    paddingHorizontal: 20,
+  },
+  shortcutsScroll: {
+    marginTop: 10,
+    marginLeft: -20,
+    marginRight: -20,
+  },
+  shortcutCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 24,
+    padding: 16,
+    width: 120,
+    marginRight: 12,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  shortcutIconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: "center",
+    alignItems: "center",
+
+    marginBottom: 8,
+  },
+  shortcutText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#374151",
+    textAlign: "center",
+  },
+});
+
+
+
+

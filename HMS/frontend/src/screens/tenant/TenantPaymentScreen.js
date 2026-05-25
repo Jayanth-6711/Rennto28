@@ -1,0 +1,1001 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  Modal,
+  Image,
+  Alert,
+  Linking,
+  ActivityIndicator,
+  Animated,
+  StatusBar,
+  Platform,
+  RefreshControl,
+  TextInput,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import QRCode from 'react-native-qrcode-svg';
+import BASE_URL from '../../config/Api';
+import { useLanguage } from '../../utils/LanguageContext';
+
+const { width } = Dimensions.get('window');
+
+const TenantPaymentScreen = () => {
+  const { t } = useLanguage();
+
+  const upiProviders = [
+    {
+      name: 'PhonePe',
+      logo: 'https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/phonepe-icon.svg',
+      bgColor: '#F3E8FF'
+    },
+    {
+      name: 'GPay',
+      logo: 'https://cdn-icons-png.flaticon.com/512/6124/6124998.png',
+      bgColor: '#DBEAFE'
+    },
+    {
+      name: 'Paytm',
+      logo: 'https://cdn-icons-png.flaticon.com/512/825/825454.png',
+      bgColor: '#E0F2FE'
+    },
+  ];
+
+  // State
+  const [loading, setLoading] = useState(true);
+  const [paymentData, setPaymentData] = useState(null);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState('upi'); // 'upi' or 'cash'
+  const [uploading, setUploading] = useState(false);
+  const [paymentProof, setPaymentProof] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [fileSize, setFileSize] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+    const [cashDescription, setCashDescription] = useState('');
+    const [screenshotDescription, setScreenshotDescription] = useState('');
+    const [copying, setCopying] = useState(false);
+    const [ownerIssue, setOwnerIssue] = useState(null);
+    const [issueModalVisible, setIssueModalVisible] = useState(false);
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    fetchPaymentDetails();
+    
+    // Aggressive background polling (5 seconds)
+    const pollId = setInterval(() => {
+      fetchPaymentDetails(true);
+    }, 5000);
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 20,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    return () => clearInterval(pollId);
+  }, []);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchPaymentDetails().then(() => setRefreshing(false));
+  }, []);
+
+  const fetchPaymentDetails = async (isBackground = false) => {
+    try {
+      if (!isBackground) setLoading(true);
+      const phone = await AsyncStorage.getItem('tenantPhone');
+
+      if (!phone) {
+        if (!isBackground) {
+          Alert.alert(t('error') || 'Error', t('user_not_found') || 'User details not found. Please log in again.');
+        }
+        return;
+      }
+
+      const response = await axios.get(
+        `${BASE_URL}/api/payment-details/${encodeURIComponent(phone)}/`
+      );
+
+      const data = response.data;
+      console.log("FULL PAYMENT API RESPONSE:", data);
+
+      let dueDays = null;
+      let status = 'Pending';
+
+      if (data?.dueDate) {
+        try {
+          const parts = data.dueDate.split('-');
+          if (parts.length === 3) {
+            const due = new Date(parts[0], parts[1] - 1, parts[2]);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const diffTime = due - today;
+            dueDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (dueDays < 0) {
+              status = 'Overdue';
+            } else if (dueDays === 0) {
+              status = 'Due Today';
+            } else if (dueDays <= 5) {
+              status = 'Due Soon';
+            } else {
+              status = 'Upcoming';
+            }
+          }
+        } catch (dateError) {
+          console.log("DATE PARSE ERROR:", dateError);
+        }
+      }
+
+      const finalStatus = data?.status === 'Paid' ? 'Paid' : status;
+
+      setPaymentData({
+        ...data,
+        rent: Number(data?.rent || 0),
+        dueDays,
+        status: finalStatus,
+        checkIn: data?.checkIn || null,
+        dueDate: data?.dueDate || null,
+      });
+
+      // OWNER ISSUE DETECTION
+      if (data?.ownerIssue) {
+        setOwnerIssue(data.ownerIssue);
+        // Only show popup automatically if it hasn't been acknowledged in this session
+        const ackIssueKey = `ack_issue_${phone}_${data.ownerIssue.id || 'issue'}`;
+        const issueAcknowledged = await AsyncStorage.getItem(ackIssueKey);
+        if (!issueAcknowledged && !isBackground) {
+          setIssueModalVisible(true);
+        }
+      }
+
+      // SUCCESS POPUP LOGIC
+      if (data?.lastPaymentStatus?.toUpperCase() === 'SUCCESS') {
+        const phone = await AsyncStorage.getItem('tenantPhone');
+        const ackKey = `ack_paid_${phone}_${data.lastPaymentRef || 'ref'}`;
+        const acknowledged = await AsyncStorage.getItem(ackKey);
+        
+        console.log("SUCCESS DETECTION:", { 
+          lastStatus: data.lastPaymentStatus, 
+          ackKey, 
+          isAck: acknowledged 
+        });
+
+        if (!acknowledged) {
+          Alert.alert(t('payment_verified') || 'Payment Verified!', t('owner_verified_payment') || 'The owner has verified your payment.');
+          setShowSuccessModal(true);
+        }
+      }
+
+    } catch (error) {
+      console.log("FETCH PAYMENT ERROR:", error?.response?.data || error.message);
+      if (!isBackground) {
+        Alert.alert(t('error') || 'Error', t('fetch_payment_error') || 'Could not fetch payment details.');
+      }
+    } finally {
+      if (!isBackground) setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'paid': return '#22C55E';
+      case 'verifying': return '#6366F1';
+      case 'pending': return '#F59E0B';
+      case 'overdue': return '#EF4444';
+      case 'due tomorrow': return '#3B82F6';
+      case 'due today': return '#DC2626';
+      case 'upcoming': return '#6366F1';
+      default: return '#64748B';
+    }
+  };
+
+  const getReminderConfig = () => {
+    if (!paymentData) return null;
+    const dueDays = paymentData?.dueDays;
+    if (dueDays < 0) return { color: '#FEE2E2', borderColor: '#EF4444', icon: 'alert-circle', iconColor: '#EF4444', title: t('payment overdue') || 'Payment Overdue', message: `${t('rent overdue by') || 'Your rent payment is overdue by'} ${Math.abs(dueDays)} ${t('days') || 'day(s)'}.` };
+    if (dueDays === 0) return { color: '#FEE2E2', borderColor: '#EF4444', icon: 'warning', iconColor: '#EF4444', title: t('payment due today') || 'Payment Due Today', message: t('complete rent today') || 'Please complete your rent payment today.' };
+    if (dueDays === 1) return { color: '#DBEAFE', borderColor: '#3B82F6', icon: 'notifications', iconColor: '#3B82F6', title: t('due tomorrow') || 'Due Tomorrow', message: t('rent due tomorrow') || 'Friendly reminder: Your rent is due tomorrow.' };
+    if (dueDays > 1 && dueDays <= 3) return { color: '#FEF3C7', borderColor: '#F59E0B', icon: 'time', iconColor: '#F59E0B', title: t('upcoming due date') || 'Upcoming Due Date', message: `${t('rent due in') || 'Your rent is due in'} ${dueDays} ${t('days') || 'day(s)'}.` };
+    return null;
+  };
+
+  const handleUPIPayment = async (app) => {
+    if (!paymentData?.upiId) {
+      Alert.alert(t('error') || 'Error', t('upi_not_found') || 'Owner UPI ID not found.');
+      return;
+    }
+
+    try {
+      // 📝 Create a PENDING payment record before opening UPI
+      // This ensures we have a record to attach the screenshot to later
+      await axios.post(`${BASE_URL}/api/create-payment/`, {
+        tenant_email: await AsyncStorage.getItem('tenantPhone'),
+        // tenant_name: paymentData.tenantName,
+        owner_email: paymentData.ownerPhone,
+        owner_name: paymentData.ownerName,
+        property_name: paymentData.propertyName,
+        upi_id: paymentData.upiId,
+        amount: paymentData.rent,
+        txn_ref: paymentData.txnRef,
+      });
+      
+      console.log("Payment record created:", paymentData.txnRef);
+    } catch (error) {
+      console.log("Create Payment Error:", error?.response?.data || error.message);
+      // We continue anyway so the user can pay, but logging it helps
+    }
+
+    const amount = paymentData.rent || '0';
+    const name = paymentData.ownerName || 'Property Owner';
+    const note = `Rent for ${paymentData.propertyName || 'Property'}`;
+    const upiUrl = `upi://pay?pa=${paymentData.upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+    const schemes = {
+      'PhonePe': `phonepe://pay?pa=${paymentData.upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`,
+      'GPay': `tez://upi/pay?pa=${paymentData.upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`,
+      'Paytm': `paytmmp://pay?pa=${paymentData.upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`,
+    };
+    const targetUrl = schemes[app] || upiUrl;
+    Linking.openURL(targetUrl).catch(() => Linking.openURL(upiUrl));
+  };
+
+  const handleCashPayment = async () => {
+    if (!cashDescription.trim()) {
+      Alert.alert(t('error') || 'Error', t('please_enter_description') || 'Please enter a description for the owner.');
+      return;
+    }
+
+    if (!paymentData?.ownerPhone) {
+      Alert.alert(t('error') || 'Error', t('owner_email_not_found') || 'Owner contact info not found. Please refresh.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const phone = await AsyncStorage.getItem('tenantPhone');
+      
+      // 1. Update payment status in database
+      await axios.post(`${BASE_URL}/api/cash-payment/`, {
+        phone: phone,
+        amount: paymentData.rent,
+        propertyName: paymentData.propertyName,
+        description: cashDescription
+      });
+      
+      // 2. Send instant notification to owner
+      await axios.post(`${BASE_URL}/api/send-owner-notification/`, {
+        ownerPhone: paymentData.ownerPhone,
+        title: t('cash_payment_reported') || 'Cash Payment Reported',
+        message: `${paymentData.tenantName} ${t('paid_cash_of') || "reported cash payment of"} ₹${paymentData.rent}. ${t('note') || "Note"}: ${cashDescription}`,
+      });
+
+      Alert.alert(
+        t('success') || 'Success', 
+        t('cash_payment_sent_msg') || 'Your message and payment report have been sent to the owner successfully!'
+      );
+      setCashDescription('');
+      fetchPaymentDetails();
+    } catch (error) {
+      console.log("CASH ERROR:", error.response?.data || error.message);
+      Alert.alert(t('error') || 'Error', t('failed_cash_payment') || 'Failed to send report to owner. Please check your internet.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyToClipboard = async (text) => {
+    await Clipboard.setStringAsync(text);
+    setCopying(true);
+    setTimeout(() => setCopying(false), 2000);
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(t('permission_denied') || 'Permission Denied', t('gallery_access_required') || 'Access to gallery is required.');
+      return;
+    }
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false, // Disabled cropping per user request
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      setPaymentProof(asset.uri);
+      setFileName(asset.fileName || `Payment_${Date.now()}.jpg`);
+      setFileSize(asset.fileSize ? (asset.fileSize / (1024 * 1024)).toFixed(1) + ' MB' : '');
+    }
+  };
+
+  const handleSendToOwner = async () => {
+    if (!paymentProof) {
+      Alert.alert(t('error') || 'Error', t('upload_screenshot_first') || 'Please upload a screenshot first.');
+      return;
+    }
+
+    if (!paymentData?.ownerPhone) {
+      Alert.alert(t('error') || 'Error', t('owner_email_not_found') || 'Owner contact info not found. Please refresh.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('payment_screenshot', {
+        uri: paymentProof,
+        name: fileName || 'payment.jpg',
+        type: 'image/jpeg',
+      });
+      const phone = await AsyncStorage.getItem('tenantPhone');
+      formData.append('phone', phone);
+      if (paymentData?.rent) formData.append('amount', paymentData.rent);
+      if (paymentData?.txnRef) formData.append('txn_ref', paymentData.txnRef);
+      if (screenshotDescription.trim()) formData.append('description', screenshotDescription);
+
+      // 1. Upload the screenshot
+      await axios.post(`${BASE_URL}/api/upload-payment-screenshot/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      // 2. Send instant notification to owner with the description
+      await axios.post(`${BASE_URL}/api/send-owner-notification/`, {
+        ownerPhone: paymentData.ownerPhone,
+        title: t('payment_proof_uploaded') || 'Payment Proof Uploaded',
+        message: `${paymentData.tenantName} ${t('uploaded_proof_msg') || "uploaded proof for"} ₹${paymentData.rent}. ${screenshotDescription ? (t('note') || "Note") + ": " + screenshotDescription : ""}`,
+      });
+
+      Alert.alert(
+        t('success') || 'Success', 
+        t('screenshot_uploaded_success') || 'Your payment proof and message have been sent to the owner successfully!'
+      );
+      setPaymentProof(null);
+      setScreenshotDescription('');
+      fetchPaymentDetails();
+    } catch (error) {
+      console.log("UPLOAD ERROR:", error.response?.data || error.message);
+      Alert.alert(t('error') || 'Error', t('failed_upload_screenshot') || 'Failed to send payment proof. Please check your internet.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const getNextDueDate = () => {
+    if (!paymentData?.dueDate) return t('no_due_date') || "No Due Date";
+    try {
+      const parts = paymentData.dueDate.split('-');
+      if (parts.length !== 3) return t('no_due_date') || "No Due Date";
+      const dueDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      if (isNaN(dueDate.getTime())) return t('no_due_date') || "No Due Date";
+      return dueDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch (error) {
+      return t('no_due_date') || "No Due Date";
+    }
+  };
+
+  const handleAcknowledgeIssue = async () => {
+    try {
+      const phone = await AsyncStorage.getItem('tenantPhone');
+      const ackIssueKey = `ack_issue_${phone}_${ownerIssue?.id || 'issue'}`;
+      await AsyncStorage.setItem(ackIssueKey, 'true');
+      setIssueModalVisible(false);
+    } catch (error) {
+      setIssueModalVisible(false);
+    }
+  };
+
+  const handleAcknowledgeSuccess = async () => {
+    try {
+      const phone = await AsyncStorage.getItem('tenantPhone');
+      const ackKey = `ack_paid_${phone}_${paymentData?.lastPaymentRef || 'ref'}`;
+      await AsyncStorage.setItem(ackKey, 'true');
+      setShowSuccessModal(false);
+      fetchPaymentDetails(); // Refresh to update Paid status
+    } catch (error) {
+      setShowSuccessModal(false);
+    }
+  };
+
+  const getPaymentAccessibility = () => {
+    if (!paymentData) return { enabled: false, message: t('loading') || "Loading..." };
+    
+    if (paymentData.status === 'Paid') {
+      return { 
+        enabled: false, 
+        message:  "This month rent was completed", 
+        subMessage:"Your payment has been verified by the owner." 
+      };
+    }
+
+    if (paymentData.status === 'Verifying') {
+      return { 
+        enabled: false, 
+        message: t('payment verifying msg') || "Payment is being verified", 
+        subMessage: t('wait owner confirms') || "Please wait while the owner confirms your payment." 
+      };
+    }
+
+    const dueDays = paymentData.dueDays;
+    // If dueDays is null or less than 0 (overdue), it's definitely enabled
+    if (dueDays !== null && dueDays > 7) {
+      const openDate = new Date();
+      openDate.setDate(openDate.getDate() + (dueDays - 7));
+      return { 
+        enabled: false, 
+        message: t('rent due msg') || "This month rent is due", 
+        subMessage: `${t('payment open on') || 'Payment will open on'} ${openDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` 
+      };
+    }
+
+    return { 
+      enabled: true, 
+      message: t('rent duemsg') || "This month rent is due", 
+      subMessage: `${t('complete payment by') || 'Please complete payment by'} ${getNextDueDate()}` 
+    };
+  };
+
+  if (loading && !paymentData) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4F46E5" />
+      </View>
+    );
+  }
+
+  const reminder = getReminderConfig();
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4F46E5']} />
+        }
+      >
+        
+        {/* 1. Main Premium Gradient Card */}
+        <Animated.View style={[styles.mainCardContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <LinearGradient
+            colors={['#4F46E5', '#7C3AED', '#C026D3']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.mainCard}
+          >
+            <View style={styles.cardHeader}>
+              <View style={styles.propertyBadge}>
+                <Ionicons name="business" size={14} color="#FFF" />
+                <Text style={styles.propertyBadgeText}>{paymentData?.propertyName || 'Property'}</Text>
+              </View>
+              <View style={styles.headerActions}>
+                {ownerIssue && (
+                  <TouchableOpacity 
+                    style={[styles.scanBtn, { marginRight: 10, backgroundColor: '#EF4444' }]} 
+                    onPress={() => setIssueModalVisible(true)}
+                  >
+                    <Ionicons name="alert-circle" size={24} color="#FFF" />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={styles.scanBtn} onPress={() => setQrModalVisible(true)}>
+                  <Ionicons name="qr-code-outline" size={24} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.tenantSection}>
+              {/* <Text style={styles.tenantName}>{paymentData?.tenantName || 'Tenant Name'}</Text> */}
+              <View style={styles.ownerContactRow}>
+                <Text style={styles.ownerText}>Owner: {paymentData?.ownerName || 'Owner'}</Text>
+                {paymentData?.ownerPhone && (
+                  <TouchableOpacity 
+                    style={styles.copyPhoneBtn}
+                    onPress={() => copyToClipboard(paymentData.ownerPhone)}
+                  >
+                    <Ionicons name="call-outline" size={14} color="#FFF" />
+                    <Text style={styles.copyPhoneText}>{paymentData.ownerPhone}</Text>
+                    <Ionicons name="copy-outline" size={12} color="#FFF" style={{ marginLeft: 4 }} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.rentSection}>
+              <Text style={styles.rentLabel}>Monthly Rent</Text>
+              <View style={styles.amountContainer}>
+                <Text style={styles.currency}>₹</Text>
+                <Text style={styles.amount}>{paymentData?.rent?.toLocaleString() || '0'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardFooter}>
+              <View style={styles.footerItem}>
+                <Text style={styles.footerLabel}>Due Date</Text>
+                <Text style={styles.footerValue}>{getNextDueDate()}</Text>
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(paymentData?.status) }]}>
+                <Text style={styles.statusText}>{paymentData?.status || 'Pending'}</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* 2. Dynamic Reminder Alert Card */}
+        {reminder && (
+          <Animated.View style={[styles.reminderCard, { 
+            borderColor: reminder.borderColor, 
+            backgroundColor: reminder.color,
+            opacity: fadeAnim 
+          }]}>
+            <Ionicons name={reminder.icon} size={24} color={reminder.iconColor} />
+            <View style={styles.reminderContent}>
+              <Text style={[styles.reminderTitle, { color: reminder.iconColor }]}>{reminder.title}</Text>
+              <Text style={styles.reminderMessage}>{reminder.message}</Text>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* 2.5 Payment Status Message */}
+        <View style={styles.statusMessageContainer}>
+           <View style={[styles.statusIconCircle, { backgroundColor: getPaymentAccessibility().enabled ? '#DBEAFE' : (paymentData?.status === 'Verifying' ? '#EEF2FF' : '#DCFCE7') }]}>
+              <Ionicons 
+                name={getPaymentAccessibility().enabled ? "information-circle" : (paymentData?.status === 'Verifying' ? "time" : "checkmark-done-circle")} 
+                size={24} 
+                color={getPaymentAccessibility().enabled ? "#3B82F6" : (paymentData?.status === 'Verifying' ? "#6366F1" : "#22C55E")} 
+              />
+           </View>
+           <View style={styles.statusMessageTextContent}>
+              <Text style={styles.statusMessageTitle}>{getPaymentAccessibility().message}</Text>
+              <Text style={styles.statusMessageSub}>{getPaymentAccessibility().subMessage}</Text>
+           </View>
+        </View>
+
+        {/* Tab Switcher */}
+        {getPaymentAccessibility().enabled && (
+          <View style={styles.tabContainer}>
+            <TouchableOpacity 
+              style={[styles.tab, activeTab === 'upi' && styles.activeTab]} 
+              onPress={() => setActiveTab('upi')}
+            >
+              <Ionicons name="qr-code" size={20} color={activeTab === 'upi' ? '#4F46E5' : '#64748B'} />
+              <Text style={[styles.tabText, activeTab === 'upi' && styles.activeTabText]}>UPI Payment</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.tab, activeTab === 'cash' && styles.activeTab]} 
+              onPress={() => setActiveTab('cash')}
+            >
+              <Ionicons name="cash-outline" size={20} color={activeTab === 'cash' ? '#22C55E' : '#64748B'} />
+              <Text style={[styles.tabText, activeTab === 'cash' && styles.activeTabText]}>Cash Payment</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Main Content Area */}
+        <View style={[styles.contentCard, !getPaymentAccessibility().enabled && styles.disabledContentCard]}>
+          {!getPaymentAccessibility().enabled ? (
+            <View style={styles.disabledState}>
+               <Ionicons name="lock-closed" size={48} color="#94A3B8" />
+               <Text style={styles.disabledTitle}>Payment is Locked</Text>
+               <Text style={styles.disabledSubtitle}>{getPaymentAccessibility().subMessage}</Text>
+            </View>
+          ) : activeTab === 'upi' ? (
+            <>
+              <View style={styles.upiCopyRow}>
+                <View style={styles.upiIdInfo}>
+                  <Text style={styles.upiIdLabelTab}>{t("upi id") || "UPI ID"}</Text>
+                  <Text style={styles.upiIdValueTab}>{paymentData?.upiId || 'No UPI ID'}</Text>
+                </View>
+                <TouchableOpacity 
+                  style={[styles.copyIconBtn, copying && styles.copyIconBtnActive]} 
+                  onPress={() => copyToClipboard(paymentData?.upiId)}
+                >
+                  <Ionicons name={copying ? "checkmark" : "copy-outline"} size={20} color={copying ? "#FFF" : "#4F46E5"} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.sectionLabel}>{t("pay using upi app") || "Pay using any UPI App"}</Text>
+              <View style={styles.upiGrid}>
+                {upiProviders.map((app) => (
+                  <TouchableOpacity 
+                    key={app.name} 
+                    style={styles.upiItem} 
+                    onPress={() => handleUPIPayment(app.name)}
+                  >
+                    <View style={[styles.upiIconBox, { backgroundColor: app.bgColor, borderColor: app.name === 'Paytm' ? '#F1F5F9' : '#4F46E5' }]}>
+                      <Image 
+                        source={{ uri: app.logo }} 
+                        style={styles.upiLogo} 
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={[styles.upiName, (app.name === 'PhonePe' || app.name === 'GPay') && { color: '#4F46E5' }]}>
+                      {app.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.sectionLabel, { marginTop: 24 }]}>{t("upload payment screenshot") || "Upload Payment Screenshot"}</Text>
+              
+              <View style={styles.digitalInputWrapper}>
+                <TextInput
+                  style={styles.digitalNoteInput}
+                  placeholder={t("add note") || "Add a note..."}
+                  placeholderTextColor="#94A3B8"
+                  value={screenshotDescription}
+                  onChangeText={setScreenshotDescription}
+                />
+              </View>
+
+              <TouchableOpacity style={styles.uploadArea} onPress={pickImage}>
+                <View style={styles.uploadIconCircle}>
+                  <Ionicons name="cloud-upload-outline" size={24} color="#4F46E5" />
+                </View>
+                <Text style={styles.uploadTitle}>Tap to upload screenshot</Text>
+                <Text style={styles.uploadSubtitle}>After payment, upload your screenshot here</Text>
+              </TouchableOpacity>
+
+              {paymentProof && (
+                <View style={styles.fileCard}>
+                  <Image source={{ uri: paymentProof }} style={styles.fileThumbnail} />
+                  <View style={styles.fileInfo}>
+                    <Text style={styles.fileName}>{fileName}</Text>
+                    <Text style={styles.fileSize}>{fileSize}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setPaymentProof(null)}>
+                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <TouchableOpacity 
+                style={styles.sendBtn} 
+                onPress={handleSendToOwner}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={18} color="#FFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.sendBtnText}>Send To Owner</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.cashContentPremium}>
+              <View style={styles.cashHeaderPremium}>
+                <View style={styles.cashIconCirclePremium}>
+                  <MaterialCommunityIcons name="cash-check" size={40} color="#22C55E" />
+                </View>
+                <View>
+                  <Text style={styles.cashTitlePremium}>{t("i have paid cash") || "I Have Paid Cash"}</Text>
+                  <Text style={styles.cashSubtitlePremium}>{t("report to owner") || "Report your cash payment to the owner"}</Text>
+                </View>
+              </View>
+
+              <View style={styles.cashInputWrapper}>
+                <Text style={styles.inputLabelCompact}>{t("add payment note") || "Add Note"}</Text>
+                <TextInput
+                  style={styles.cashNoteInput}
+                  placeholder={t("cash note placeholder") || "e.g. Paid in person..."}
+                  placeholderTextColor="#94A3B8"
+                  value={cashDescription}
+                  onChangeText={setCashDescription}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+
+              <TouchableOpacity 
+                style={styles.cashSendBtn} 
+                onPress={handleCashPayment}
+                disabled={loading}
+              >
+                <LinearGradient
+                  colors={['#22C55E', '#16A34A']}
+                  style={styles.cashSendGradient}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="send" size={18} color="#FFF" />
+                      <Text style={styles.cashSendBtnText}>{t("send to owner") || "Send to Owner"}</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Footer Security Note */}
+        <View style={styles.footerNote}>
+          <View style={styles.securityItem}>
+            <Ionicons name="shield-checkmark-outline" size={16} color="#22C55E" />
+            <Text style={styles.securityText}>100% Secure Payment</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.securityItem}>
+            <Ionicons name="lock-closed-outline" size={16} color="#64748B" />
+            <Text style={styles.securityText}>Your data is safe with us</Text>
+          </View>
+        </View>
+
+      </ScrollView>
+
+      {/* 3. Premium QR Modal */}
+      <Modal visible={qrModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Scan QR to Pay</Text>
+              <TouchableOpacity onPress={() => setQrModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#1E293B" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.qrWrapper}>
+              <QRCode
+                value={`upi://pay?pa=${paymentData?.upiId || ''}&pn=${encodeURIComponent(paymentData?.ownerName || '')}&am=${paymentData?.rent || '0'}&cu=INR`}
+                size={220}
+              />
+            </View>
+            <Text style={styles.qrName}>{paymentData?.ownerName || 'Property Owner'}</Text>
+            <Text style={styles.qrUpi}>{paymentData?.upiId || 'No UPI ID'}</Text>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setQrModalVisible(false)}>
+              <Text style={styles.closeBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Owner Issue Modal */}
+      <Modal visible={issueModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.issueModalContent}>
+            <LinearGradient
+              colors={['#EF4444', '#DC2626']}
+              style={styles.issueHeaderGradient}
+            >
+              <Ionicons name="alert-circle" size={48} color="#FFF" />
+              <Text style={styles.issueModalTitle}>{t("issue from owner") || "Issue from Owner"}</Text>
+            </LinearGradient>
+            
+            <View style={styles.issueBody}>
+              <Text style={styles.issueText}>{ownerIssue?.message || t("issue message") || "The owner has raised an issue regarding your payment or stay. Please check the details below."}</Text>
+              
+              {ownerIssue?.details && (
+                <View style={styles.issueDetailsBox}>
+                  <Text style={styles.issueDetailsText}>{ownerIssue.details}</Text>
+                </View>
+              )}
+
+              <TouchableOpacity style={styles.issueCloseBtn} onPress={handleAcknowledgeIssue}>
+                <Text style={styles.issueCloseBtnText}>{t("i understand") || "I Understand"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 4. Payment Success One-Time Modal */}
+      <Modal visible={showSuccessModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.successModalContent}>
+            <View style={styles.successIconCircle}>
+              <Ionicons name="checkmark" size={60} color="#FFF" />
+            </View>
+            <Text style={styles.successTitle}>Payment Verified!</Text>
+            <Text style={styles.successMessage}>
+              Your rent payment for {paymentData?.propertyName || 'your property'} has been successfully verified by the owner.
+            </Text>
+            <TouchableOpacity style={styles.successOkBtn} onPress={handleAcknowledgeSuccess}>
+              <Text style={styles.successOkText}>Awesome!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { paddingBottom: 40 },
+  mainCardContainer: { margin: 16, shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
+  mainCard: { borderRadius: 24, padding: 24, minHeight: 240, justifyContent: 'space-between' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  propertyBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  propertyBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '600', marginLeft: 6 },
+  scanBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.2)', justifyContent: 'center', alignItems: 'center' },
+  tenantSection: { marginTop: 16 },
+  tenantName: { fontSize: 22, fontWeight: 'bold', color: '#FFF' },
+  ownerContactRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, flexWrap: 'wrap' },
+  ownerText: { fontSize: 14, color: 'rgba(255, 255, 255, 0.8)' },
+  copyPhoneBtn: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 12,
+    marginLeft: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)'
+  },
+  copyPhoneText: { color: '#FFF', fontSize: 13, fontWeight: '700', marginLeft: 4 },
+  rentSection: { marginTop: 16 },
+  rentLabel: { color: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
+  amountContainer: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 2 },
+  currency: { color: '#FFF', fontSize: 20, fontWeight: 'bold', marginTop: 4, marginRight: 4 },
+  amount: { color: '#FFF', fontSize: 36, fontWeight: 'bold' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 20 },
+  footerItem: { flex: 1 },
+  footerLabel: { color: 'rgba(255, 255, 255, 0.6)', fontSize: 10, textTransform: 'uppercase' },
+  footerValue: { color: '#FFF', fontSize: 15, fontWeight: '700', marginTop: 2 },
+  statusBadge: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' },
+  statusText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
+  reminderCard: { flexDirection: 'row', marginHorizontal: 16, padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 20, alignItems: 'center' },
+  reminderContent: { marginLeft: 12, flex: 1 },
+  reminderTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 2 },
+  reminderMessage: { fontSize: 13, color: '#475569', lineHeight: 18 },
+  tabContainer: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: '#FFF', borderRadius: 16, padding: 6, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 16 },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12 },
+  activeTab: { backgroundColor: '#F0F7FF', borderWidth: 1, borderColor: '#4F46E5' },
+  tabText: { fontSize: 14, fontWeight: '600', color: '#64748B', marginLeft: 8 },
+  activeTabText: { color: '#4F46E5' },
+  statusMessageContainer: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: '#FFF', padding: 16, borderRadius: 20, marginBottom: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 1 },
+  statusIconCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  statusMessageTextContent: { flex: 1 },
+  statusMessageTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
+  statusMessageSub: { fontSize: 13, color: '#64748B', marginTop: 2 },
+  contentCard: { marginHorizontal: 16, backgroundColor: '#FFF', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 20, elevation: 2 },
+  disabledContentCard: { opacity: 0.8, backgroundColor: '#F1F5F9' },
+  disabledState: { alignItems: 'center', paddingVertical: 40 },
+  disabledTitle: { fontSize: 18, fontWeight: 'bold', color: '#475569', marginTop: 16 },
+  disabledSubtitle: { fontSize: 14, color: '#94A3B8', marginTop: 8, textAlign: 'center' },
+  sectionLabel: { fontSize: 15, fontWeight: 'bold', color: '#1E293B', marginBottom: 16 },
+  upiGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  upiItem: {
+    alignItems: 'center',
+    width: '30%',
+  },
+  upiIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  upiName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  upiLogo: {
+    width: 32,
+    height: 32,
+  },
+  phonePeIcon: {
+    backgroundColor: '#6739B7',
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  phonePeText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  uploadArea: { width: '100%', height: 140, borderRadius: 20, borderWidth: 1, borderColor: '#4F46E5', borderStyle: 'dashed', backgroundColor: '#F5F3FF', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  uploadIconCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', marginBottom: 10, shadowColor: '#4F46E5', shadowOpacity: 0.1, shadowRadius: 10 },
+  uploadTitle: { fontSize: 15, fontWeight: 'bold', color: '#4F46E5' },
+  uploadSubtitle: { fontSize: 12, color: '#64748B', marginTop: 4 },
+  fileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 16, padding: 12, marginTop: 16, borderWidth: 1, borderColor: '#F1F5F9' },
+  fileThumbnail: { width: 48, height: 48, borderRadius: 10, marginRight: 12 },
+  fileInfo: { flex: 1 },
+  fileName: { fontSize: 14, fontWeight: '700', color: '#1E293B' },
+  fileSize: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  sendBtn: { backgroundColor: '#4F46E5', flexDirection: 'row', height: 58, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 24, shadowColor: '#4F46E5', shadowOpacity: 0.3, shadowRadius: 12, elevation: 4 },
+  sendBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  cashContent: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  cashIllustration: { width: 100, height: 100, backgroundColor: '#F0FDF4', borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginRight: 20 },
+  checkBadge: { position: 'absolute', bottom: 12, right: 12, width: 28, height: 28, borderRadius: 14, backgroundColor: '#22C55E', borderWidth: 2, borderColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
+  cashTextContainer: { flex: 1 },
+  cashTitle: { fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginBottom: 6 },
+  cashDesc: { fontSize: 13, color: '#64748B', lineHeight: 20, marginBottom: 16 },
+  confirmCashBtn: { backgroundColor: '#22C55E', flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  confirmCashText: { color: '#FFF', fontSize: 14, fontWeight: 'bold' },
+  footerNote: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 24, marginHorizontal: 16, backgroundColor: '#FFF', borderRadius: 16, marginTop: 24 },
+  securityItem: { flexDirection: 'row', alignItems: 'center' },
+  securityText: { fontSize: 11, color: '#64748B', marginLeft: 6, fontWeight: '600' },
+  divider: { width: 1, height: 18, backgroundColor: '#E2E8F0', marginHorizontal: 16 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.7)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 32, padding: 32, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 24 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1E293B' },
+  qrWrapper: { padding: 20, backgroundColor: '#F8FAFC', borderRadius: 24, borderWidth: 1, borderColor: '#F1F5F9' },
+  qrName: { fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginTop: 20 },
+  qrUpi: { fontSize: 14, color: '#64748B', marginTop: 6 },
+  closeBtn: { marginTop: 24, backgroundColor: '#F1F5F9', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 16 },
+  closeBtnText: { fontSize: 15, fontWeight: 'bold', color: '#475569' },
+  successModalContent: { width: width * 0.85, backgroundColor: '#FFF', borderRadius: 32, padding: 32, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 20 },
+  successIconCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#22C55E', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  successTitle: { fontSize: 24, fontWeight: 'bold', color: '#1E293B', marginBottom: 12 },
+  successMessage: { fontSize: 16, color: '#64748B', textAlign: 'center', lineHeight: 24, marginBottom: 32 },
+  successOkBtn: { width: '100%', backgroundColor: '#22C55E', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
+  successOkText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+  cashContentPremium: { paddingVertical: 10 },
+  cashHeaderPremium: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  cashIconCirclePremium: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  cashTitlePremium: { fontSize: 18, fontWeight: 'bold', color: '#1E293B' },
+  cashSubtitlePremium: { fontSize: 13, color: '#64748B', marginTop: 2 },
+  cashInputWrapper: { marginBottom: 20 },
+  inputLabelCompact: { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 8 },
+  cashNoteInput: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, fontSize: 14, color: '#1E293B', borderWidth: 1, borderColor: '#E2E8F0', textAlignVertical: 'top', minHeight: 80 },
+  cashSendBtn: { borderRadius: 16, overflow: 'hidden' },
+  cashSendGradient: { flexDirection: 'row', height: 54, justifyContent: 'center', alignItems: 'center', gap: 8 },
+  cashSendBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+   upiCopyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'space-between' },
+   upiIdInfo: { flex: 1 },
+   upiIdLabelTab: { fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+   upiIdValueTab: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
+   copyIconBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+   copyIconBtnActive: { backgroundColor: '#22C55E' },
+   digitalInputWrapper: { marginBottom: 16 },
+    digitalNoteInput: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, fontSize: 14, color: '#1E293B', borderWidth: 1, borderColor: '#E2E8F0', height: 48 },
+    headerActions: { flexDirection: 'row', alignItems: 'center' },
+    issueModalContent: { width: width * 0.85, backgroundColor: '#FFF', borderRadius: 32, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 20 },
+    issueHeaderGradient: { padding: 32, alignItems: 'center', gap: 12 },
+    issueModalTitle: { fontSize: 22, fontWeight: 'bold', color: '#FFF' },
+    issueBody: { padding: 24 },
+    issueText: { fontSize: 16, color: '#1E293B', textAlign: 'center', lineHeight: 24, marginBottom: 20 },
+    issueDetailsBox: { backgroundColor: '#FEF2F2', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#FEE2E2', marginBottom: 24 },
+    issueDetailsText: { fontSize: 14, color: '#991B1B', lineHeight: 20 },
+    issueCloseBtn: { backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
+    issueCloseBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  });
+
+export default TenantPaymentScreen;
+
+

@@ -1,0 +1,826 @@
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useLanguage } from "../../utils/LanguageContext";
+import * as ImagePicker from "expo-image-picker";
+import COLORS from "../../theme/colors";
+import BASE_URL from "@/src/config/Api";
+import {
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  RefreshControl,
+  ActivityIndicator,
+  Animated,
+  Easing,
+  StatusBar
+} from "react-native";
+
+const initialTenant = {
+  name: "...",
+  role: "Resident",
+  phone: "...",
+  phone: "...",
+  apartment: "...",
+  location: "..."
+};
+
+const languages = [
+  { id: 'en', name: 'English', subName: 'Default', icon: '🇺🇸' },
+  { id: 'hi', name: 'हिन्दी', subName: 'Hindi', icon: '🟠' },
+  { id: 'te', name: 'తెలుగు', subName: 'Telugu', icon: '🔵' },
+  { id: 'kn', name: 'ಕನ್ನಡ', subName: 'Kannada', icon: '🟢' },
+  { id: 'ta', name: 'தமிழ்', subName: 'Tamil', icon: '🟣' },
+];
+
+export default function TenantProfile({ navigation }) {
+  const { t, language, changeLanguage } = useLanguage();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showLangModal, setShowLangModal] = useState(false);
+  const [tenantData, setTenantData] = useState(initialTenant);
+  const [profileImage, setProfileImage] = useState(null);
+
+  // Edit Form States
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const fetchTenantProfile = useCallback(async () => {
+    try {
+      const phone = await AsyncStorage.getItem("tenantPhone");
+
+      if (!phone) return;
+
+      const response = await fetch(
+        `${BASE_URL}/api/tenantdetails/${encodeURIComponent(phone.trim())}/`
+      );
+
+      const data = await response.json();
+
+      console.log("API DATA:", data);
+
+      if (response.ok) {
+
+        const tenantInfo = {
+          name: data.name || "Tenant",
+          phone: data.phone || "N/A",
+          phone: data.phone || "N/A",
+
+          apartment: data.property_name || "N/A",
+
+          room_number: data.room_number || "N/A",
+          floor_number: data.floor_number || "N/A",
+
+          location: data.location || "N/A",
+
+          role: "Verified Resident",
+        };
+
+        setTenantData(tenantInfo);
+
+        setEditName(data.name || "");
+        setEditPhone(data.phone || "");
+
+        // IMAGE
+        if (data.identityImage) {
+          console.log("IDENTITY IMAGE:", data.identityImage);
+          console.log("TYPE:", typeof data.identityImage);
+
+          setProfileImage(data.identityImage);
+        }
+      }
+    } catch (e) {
+      console.log("ERROR:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleUpdateProfile = async () => {
+    if (!editName.trim() || !editPhone.trim()) {
+      Alert.alert("Error", "Please fill all fields");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const phone = await AsyncStorage.getItem("tenantPhone");
+
+      const response = await fetch(
+        `${BASE_URL}/api/tenant_profile_update/${encodeURIComponent(phone.trim())}/`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: editName,
+            phone: editPhone,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setTenantData((prev) => ({
+          ...prev,
+          name: editName,
+          phone: editPhone,
+        }));
+
+        Alert.alert("Success", data.message);
+
+        setShowEditModal(false);
+      } else {
+        Alert.alert("Error", data.error || "Update failed");
+      }
+    } catch (error) {
+      console.log(error);
+      Alert.alert("Error", "Server error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchTenantProfile();
+    }, [fetchTenantProfile])
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchTenantProfile();
+    setRefreshing(false);
+  }, [fetchTenantProfile]);
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) setProfileImage(result.assets[0].uri);
+  };
+
+  const takePhoto = async () => {
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) setProfileImage(result.assets[0].uri);
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(t("logout") || "Logout", t("logout_confirm") || "Are you sure?", [
+      { text: t("cancel") || "Cancel", style: "cancel" },
+      { text: t("logout") || "Logout", onPress: async () => { await AsyncStorage.removeItem("tenantPhone"); navigation.reset({ index: 0, routes: [{ name: 'RoleSection' }] }) } }
+    ]);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#7A3FC4" />
+        <Text style={styles.loaderText}>{t("loading") || "Loading..."}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#7A3FC4"]} />}
+      >
+        {/* Header Gradient - Same as Owner */}
+        <LinearGradient
+          colors={["#E9D5FF", "#DDD6FE", "#C4B5FD"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          {/* <View style={styles.headerTopRow}>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('TenantNotification')}>
+              <Ionicons name="notifications-outline" size={24} color="#5B21B6" />
+            </TouchableOpacity>
+          </View> */}
+
+          <View style={styles.profileSection}>
+            <TouchableOpacity
+              style={styles.profileImageContainer}
+              onPress={() => setShowProfileModal(true)}
+            >
+              {profileImage ? (
+                <Image
+                  source={{ uri: profileImage }}
+                  style={styles.profileImage}
+                  resizeMode="cover"
+                  onLoad={() => console.log("IMAGE LOADED SUCCESS")}
+                  onError={(e) => console.log("PROFILE IMAGE ERROR:", e.nativeEvent)}
+                />
+              ) : (
+                <View style={styles.profileImagePlaceholder}>
+                  <Text style={styles.profileImageLetter}>{tenantData.name.charAt(0)}</Text>
+                </View>
+              )}
+              <View style={styles.cameraBadge}>
+                <Ionicons name="camera" size={16} color="#FFF" />
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.name}>{tenantData.name}</Text>
+            <View style={styles.roleBadge}>
+              <Ionicons name="checkmark-circle" size={14} color="#7A3FC4" />
+              <Text style={styles.roleText}>{tenantData.role}</Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* Resident Information */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t("resident_details") || "Resident Details"}</Text>
+          <View style={styles.infoCard}>
+            <InfoItem icon="call-outline" label={t("phone") || "Phone"} value={tenantData.phone} color="#10B981" />
+            <View style={styles.divider} />
+            <InfoItem icon="mail-outline" label={t("phone") || "phone"} value={tenantData.phone} color="#F59E0B" />
+            <View style={styles.divider} />
+            <InfoItem icon="business-outline" label={t("property_name") || "Property Name"} value={tenantData.apartment} color="#6366F1" />
+            <View style={styles.divider} />
+            <InfoItem
+              icon="home-outline"
+              label={t("room_flat_floor") || "Room/Flat & Floor"}
+              value={`${tenantData.room_number} (${t("floor") || "Floor"}: ${tenantData.floor_number})`}
+              color="#8B5CF6"
+            />
+            <View style={styles.divider} />
+            <InfoItem icon="location-outline" label={t("location") || "Location"} value={tenantData.location} color="#EC4899" />
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t("account_actions") || "Account Actions"}</Text>
+          <View style={styles.actionsCard}>
+            <ActionItem
+              icon="time-outline"
+              label={t("payment_history") || "Payment History"}
+              color="#7C3AED"
+              onPress={() => navigation.navigate("TenantPaymentHistory")}
+            />
+            <ActionItem
+              icon="globe-outline"
+              label={t("languages") || "Languages"}
+              color="#10B981"
+              onPress={() => setShowLangModal(true)}
+            />
+            <ActionItem
+              icon="notifications-outline"
+              label={t("notifications") || "Notifications"}
+              color="#F59E0B"
+              onPress={() => navigation.navigate('TenantNotification')}
+            />
+            <ActionItem
+              icon="log-out-outline"
+              label={t("logout") || "Sign Out"}
+              color="#DC2626"
+              onPress={handleLogout}
+              isLast
+            />
+          </View>
+        </View>
+
+      </ScrollView>
+
+      {/* Profile Settings Modal */}
+      <Modal
+        visible={showProfileModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowProfileModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowProfileModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t("profile_settings") || "Profile Settings"}</Text>
+              <TouchableOpacity onPress={() => setShowProfileModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => {
+                setShowProfileModal(false);
+                takePhoto();
+              }}
+            >
+              <View style={[styles.optionIcon, { backgroundColor: '#F0F9FF' }]}>
+                <Ionicons name="camera-outline" size={24} color="#0369A1" />
+              </View>
+              <Text style={styles.optionLabel}>{t("take_photo") || "Take New Photo"}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => {
+                setShowProfileModal(false);
+                pickImage();
+              }}
+            >
+              <View style={[styles.optionIcon, { backgroundColor: '#F5F3FF' }]}>
+                <Ionicons name="image-outline" size={24} color="#7A3FC4" />
+              </View>
+              <Text style={styles.optionLabel}>{t("choose_gallery") || "Choose from Gallery"}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => {
+                setShowProfileModal(false);
+                setShowEditModal(true);
+              }}
+            >
+              <View style={[styles.optionIcon, { backgroundColor: '#ECFDF5' }]}>
+                <Ionicons name="create-outline" size={24} color="#059669" />
+              </View>
+              <Text style={styles.optionLabel}>{t("edit_profile_details") || "Edit Profile Details"}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setShowProfileModal(false)}
+            >
+              <Text style={styles.modalCancelText}>{t("cancel") || "Cancel"}</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      {/* Edit Profile Form Modal */}
+      <Modal
+        visible={showEditModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.formModalOverlay}>
+          <View style={styles.formModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t("edit_profile") || "Edit Profile"}</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>{t("full_name") || "Full Name"}</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="person-outline" size={20} color="#64748B" />
+                <TextInput
+                  style={styles.textInput}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder={t("full_name") || "Enter your name"}
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>{t("phone_number") || "Phone Number"}</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="call-outline" size={20} color="#64748B" />
+                <TextInput
+                  style={styles.textInput}
+                  value={editPhone}
+                  onChangeText={setEditPhone}
+                  placeholder={t("phone_number") || "Enter phone number"}
+                  keyboardType="phone-pad"
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+              onPress={handleUpdateProfile}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>{t("save") || "Save Changes"}</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setShowEditModal(false)}
+            >
+              <Text style={styles.modalCancelText}>{t("cancel") || "Cancel"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Language Selection Modal */}
+      <Modal
+        visible={showLangModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowLangModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowLangModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t("select_language")}</Text>
+              <TouchableOpacity onPress={() => setShowLangModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {languages.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.modalOption,
+                    language === item.id && { backgroundColor: '#F5F3FF', borderRadius: 16 }
+                  ]}
+                  onPress={() => {
+                    changeLanguage(item.id);
+                    setShowLangModal(false);
+                  }}
+                >
+                  <View style={[styles.optionIcon, { backgroundColor: 'white' }]}>
+                    <Text style={{ fontSize: 24 }}>{item.icon}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[
+                      styles.optionLabel,
+                      language === item.id && { color: '#7A3FC4' }
+                    ]}>
+                      {item.name}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#94A3B8' }}>{item.subName}</Text>
+                  </View>
+                  {language === item.id && (
+                    <Ionicons name="checkmark-circle" size={24} color="#7A3FC4" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setShowLangModal(false)}
+            >
+              <Text style={styles.modalCancelText}>{t("cancel") || "Cancel"}</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
+const InfoItem = ({ icon, label, value, color }) => (
+  <View style={styles.infoItem}>
+    <View style={[styles.infoIcon, { backgroundColor: `${color}15` }]}>
+      <Ionicons name={icon} size={20} color={color} />
+    </View>
+    <View style={styles.infoText}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  </View>
+);
+
+const ActionItem = ({ icon, label, color, onPress, isLast }) => (
+  <TouchableOpacity style={[styles.actionItem, isLast && { borderBottomWidth: 0 }]} onPress={onPress}>
+    <View style={[styles.actionIcon, { backgroundColor: `${color}15` }]}>
+      <Ionicons name={icon} size={20} color={color} />
+    </View>
+    <Text style={styles.actionLabel}>{label}</Text>
+    <Ionicons name="chevron-forward-outline" size={20} color="#CBD5E1" />
+  </TouchableOpacity>
+);
+
+const styles = StyleSheet.create({
+  loader: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  loaderText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600'
+  },
+  content: {
+    paddingBottom: 40
+  },
+  header: {
+    paddingTop: 50,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  notifBtn: {
+    padding: 8,
+  },
+  profileSection: {
+    alignItems: 'center',
+  },
+  profileImageContainer: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 4,
+    borderColor: '#FFF',
+  },
+  profileImagePlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(122,63,196,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: '#FFF',
+  },
+  profileImageLetter: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#7A3FC4',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#7A3FC4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
+  },
+  name: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 6,
+  },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(122,63,196,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  roleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#7A3FC4',
+  },
+  section: {
+    paddingHorizontal: 16,
+    marginTop: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  infoCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 3,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  infoIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoText: {
+    marginLeft: 14,
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  infoValue: {
+    fontSize: 15,
+    color: '#1E293B',
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 16,
+  },
+  actionsCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 3,
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  actionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionLabel: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1F2937',
+    fontWeight: '600',
+    marginLeft: 14,
+  },
+  versionText: {
+    textAlign: 'center',
+    marginTop: 30,
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1F2937',
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 16,
+    gap: 16,
+  },
+  optionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  modalCancelBtn: {
+    backgroundColor: '#F1F5F9',
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: '#64748B',
+  },
+  formModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  formModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 8,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  textInput: {
+    flex: 1,
+    paddingVertical: 12,
+    marginLeft: 12,
+    fontSize: 15,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  saveBtn: {
+    backgroundColor: '#7A3FC4',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  saveBtnText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+});
+
+

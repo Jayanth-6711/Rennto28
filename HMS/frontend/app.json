@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Rennto",
+    "slug": "rennto",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "rennto",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "end",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.jayanth.front",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/step16.jpg",
+        "backgroundImage": "./assets/images/step34.jpg",
+        "monochromeImage": "./assets/images/step2.jpg"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/step2.jpg"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/step2.jpg",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "91c06902-7b72-442c-8f2a-d9ed9f323105"
+      }
+    },
+    "owner": "jayanth1234"
+  }
+}
