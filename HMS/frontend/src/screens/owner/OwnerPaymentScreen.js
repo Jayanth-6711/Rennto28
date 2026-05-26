@@ -4,9 +4,37 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import BASE_URL from '../../config/Api';
+import axiosOriginal from 'axios';
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
 import { Svg, Circle, G, Line, Path, Rect } from 'react-native-svg';
+
+const axios = {
+  get: async (url, config = {}) => {
+    const res = await fetchWithAuth(url, { ...config, method: 'GET' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(`Request failed with status code ${res.status}`);
+      err.response = { data, status: res.status };
+      throw err;
+    }
+    return { data, status: res.status };
+  },
+  post: async (url, body, config = {}) => {
+    const res = await fetchWithAuth(url, {
+      ...config,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(config.headers || {}) },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(`Request failed with status code ${res.status}`);
+      err.response = { data, status: res.status };
+      throw err;
+    }
+    return { data, status: res.status };
+  }
+};
 import { useLanguage } from '../../utils/LanguageContext';
 import * as DocumentPicker from 'expo-document-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -93,23 +121,43 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [isSetupMode, setIsSetupMode] = useState(false);
   const [setupDismissed, setSetupDismissed] = useState(false);
-  const [ownerNotifs, setOwnerNotifs] = useState([]);
-  const [notifModalVisible, setNotifModalVisible] = useState(false);
   const [upiError, setUpiError] = useState("");
   const [qrError, setQrError] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [phoneError, setPhoneError] = useState("");
+
+  // Rehydrate OwnerPhone if empty (e.g. after refresh or app restart)
+  useEffect(() => {
+    const checkPhone = async () => {
+      const stored = await AsyncStorage.getItem("ownerPhone");
+      if (stored) {
+        console.log("Rehydrating Owner Payment with:", stored);
+        setPhoneNumber(stored);
+      }
+    };
+    checkPhone();
+  }, []);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // UPI Validation helper
   const validateUpi = (id) => {
-    const upiRegex = /^[0-9]{10}@[a-zA-Z]{2,}$/;
     if (!id) return "UPI ID is required";
-    if (id.length < 10) return "Enter 10 digit number";
-    if (!id.includes('@')) return "Add @ after number";
-    if (!upiRegex.test(id)) return "Invalid format (10digits@bank)";
+    if (id.length > 30) return "Maximum 30 characters allowed";
+    
+    // Check for spaces
+    if (/\s/.test(id)) return "Spaces are not allowed";
+    
+    // Check for exactly one @
+    const atCount = (id.match(/@/g) || []).length;
+    if (atCount !== 1) return "Must have exactly one @";
+    
+    // Valid formats like name@paytm or user123@ybl
+    // Allowed before @: letters, numbers, . _ -
+    const upiRegex = /^[a-zA-Z0-9.\-_]+@[a-zA-Z]{2,}$/;
+    if (!upiRegex.test(id)) return "Invalid UPI format";
+    
     return "";
   };
 
@@ -127,34 +175,10 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
   };
 
   const handleUpiChange = (text) => {
-    let formatted = text;
-    
-    // If length is 10 or less, only allow numbers
-    if (text.length <= 10) {
-      formatted = text.replace(/[^0-9]/g, '');
-    } else {
-      // After 10 characters
-      const phonePart = text.slice(0, 10).replace(/[^0-9]/g, '');
-      let restPart = text.slice(10);
-      
-      // In the rest part:
-      // 1. No more numbers allowed ("numbers stop")
-      // 2. Only letters and @ allowed
-      restPart = restPart.replace(/[^a-zA-Z@]/g, '');
-      
-      // Ensure only one @ is allowed
-      const atIndex = restPart.indexOf('@');
-      if (atIndex !== -1) {
-        const beforeAt = restPart.slice(0, atIndex).replace(/@/g, '');
-        const afterAt = restPart.slice(atIndex + 1).replace(/@/g, '');
-        restPart = beforeAt + '@' + afterAt;
-      }
-      
-      formatted = phonePart + restPart;
-    }
-    
-    setUpiId(formatted);
-    setUpiError(validateUpi(formatted));
+    // Remove spaces immediately
+    const cleaned = text.replace(/\s/g, '');
+    setUpiId(cleaned);
+    setUpiError(validateUpi(cleaned));
   };
 
   useEffect(() => {
@@ -169,15 +193,15 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
           const setupStatus = await AsyncStorage.getItem(`setup_complete_${phone}`);
           
           // 2. Fetch from server to be sure
-          const response = await fetch(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone.trim())}/`);
+          const response = await fetchWithAuth(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone.trim())}/`);
           const data = await response.json();
           
           if (response.ok && data.step1) {
             upi = data.step1.upiId || "";
             qr = data.step1.qrCode || null;
-            const phone = data.step1.phoneNumber || "";
+            const phoneNumber = data.step1.phoneNumber || "";
             setUpiId(upi);
-            setPhoneNumber(phone);
+            setPhoneNumber(phoneNumber);
             setQrCode(qr ? (qr.startsWith('http') ? qr : `${BASE_URL}${qr}`) : null);
             
             // If server has data, it means setup was done elsewhere or previously
@@ -265,7 +289,7 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
           paymentMethod: item.payment_screenshot ? 'UPI' : (item.status === 'SUCCESS' ? 'Cash' : null),
           payment_screenshot: item.payment_screenshot ? (item.payment_screenshot.startsWith('http') ? item.payment_screenshot : `${BASE_URL}${item.payment_screenshot}`) : null,
           txn_ref: item.txn_ref,
-          tenant_email: item.tenant_email,
+          tenant_phone: item.tenant_phone,
           description: item.description // Get the tenant message/note
         };
       });
@@ -282,28 +306,9 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
 
       setTenantData(uniqueData);
 
-      // Detect new messages/notifications from tenants
-      const newNotifs = uniqueData
-        .filter(item => item.description)
-        .map(item => ({
-          id: item.txn_ref,
-          tenantName: item.name,
-          message: item.description,
-          type: item.payment_screenshot ? 'Digital Proof' : 'Cash Report',
-          amount: item.amount,
-          date: item.dueDate
-        }));
-      
-      setOwnerNotifs(newNotifs);
-
-      // Only show popup if there are new notifications and not already showing
-      if (newNotifs.length > ownerNotifs.length && !isBackground) {
-        setNotifModalVisible(true);
-      }
-
-      // Populate verification queue with payments that have screenshots but are still pending
+      // Populate verification queue with payments that have screenshots or are cash payments but are still pending
       const queue = uniqueData
-        .filter(item => item.payment_screenshot && item.status === 'due')
+        .filter(item => (item.payment_screenshot || (item.txn_ref && item.txn_ref.startsWith('CASH-'))) && item.status === 'due')
         .map(item => ({
           id: item.id,
           tenantId: item.id,
@@ -313,7 +318,8 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
           proofImage: item.payment_screenshot,
           timestamp: item.dueDate + ', ' + item.dueTime,
           txn_ref: item.txn_ref,
-          tenant_email: item.tenant_email
+          tenant_phone: item.tenant_phone,
+          description: item.description
         }));
       
       setVerificationQueue(queue);
@@ -356,7 +362,7 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
         setLoadingBank(false);
         return;
       }
-      const response = await fetch(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone.trim())}/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone.trim())}/`);
       const data = await response.json();
       if (response.ok && data.step1) {
         setUpiId(data.step1.upiId || "");
@@ -418,7 +424,7 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
         });
       }
 
-      const response = await fetch(`${BASE_URL}/api/owner_profile_update/${encodeURIComponent(phone.trim())}/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_profile_update/${encodeURIComponent(phone.trim())}/`, {
         method: 'PUT',
         body: formData,
       });
@@ -427,7 +433,6 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
 
       if (response.ok) {
         // Update local storage so we never see setup again for this phone
-        const phone = await AsyncStorage.getItem("ownerPhone");
         if (phone) {
           await AsyncStorage.setItem(`setup_complete_${phone}`, "true");
         }
@@ -466,7 +471,8 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
         setShowUpiModal(false);
         Alert.alert("Success", "Payment details updated successfully!");
       } else {
-        Alert.alert("Error", result.message || "Failed to update payment details");
+        const errorMsg = result.message || result.error || "Failed to update payment details";
+        Alert.alert("Error", errorMsg);
       }
     } catch (error) {
       console.error(error);
@@ -489,17 +495,21 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
     }
   };
 
-  const handleSendReminder = async (tenantName, tenantPhone) => {
+  const handleSendReminder = async (tenantName, tenantPhone, amount = null) => {
     try {
       if (!tenantPhone) {
-        Alert.alert('Error', `Missing phone for ${tenantName}. Cannot send reminder.`);
+        Alert.alert('Error', `Missing phone number for ${tenantName}. Cannot send reminder.`);
         return;
       }
       setLoading(true);
       await axios.post(`${BASE_URL}/api/send-tenant-notification/`, {
         tenantPhone: tenantPhone,
-        title: 'Rent Payment Reminder',
-        message: `Hi ${tenantName}, this is a reminder for your rent payment. Please pay as soon as possible.`
+        title: amount ? 'Payment Request' : 'Rent Payment Reminder',
+        message: amount 
+          ? `Hi ${tenantName}, please pay ₹${amount.toLocaleString()} for your rent.` 
+          : `Hi ${tenantName}, this is a reminder for your rent payment. Please pay as soon as possible.`,
+        type: amount ? 'PAYMENT_REQUEST' : 'REMINDER',
+        amount: amount
       });
       setLoading(false);
       Alert.alert('Success', `Reminder sent to ${tenantName} successfully.`);
@@ -525,12 +535,14 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
       let successCount = 0;
       
       for (const tenant of pendingTenants) {
-        if (tenant.tenant_email) {
+        if (tenant.tenant_phone) {
           try {
             await axios.post(`${BASE_URL}/api/send-tenant-notification/`, {
-              tenantPhone: tenant.tenant_email,
+              tenantPhone: tenant.tenant_phone,
               title: 'Urgent Rent Payment Reminder',
-              message: `Hi ${tenant.name}, this is a reminder for your rent payment for ${selectedMonth}. Please pay at your earliest convenience.`
+              message: `Hi ${tenant.name}, this is a reminder for your rent payment of ₹${tenant.amount.toLocaleString()} for ${selectedMonth}. Please pay at your earliest convenience.`,
+              type: 'REMINDER',
+              amount: tenant.amount
             });
             successCount++;
           } catch (err) {
@@ -732,10 +744,10 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
     try {
       console.log("Setting partial reminder for:", proof.name);
       
-      if (proof.tenant_email) {
+      if (proof.tenant_phone) {
         setLoading(true);
         await axios.post(`${BASE_URL}/api/send-tenant-notification/`, {
-          tenantPhone: proof.tenant_email,
+          tenantPhone: proof.tenant_phone,
           title: 'Partial Payment Update',
           message: `Hi ${proof.name}, we have received your partial payment. Please pay the remaining balance of ₹${partialPaymentData.remainingBalance} by ${partialPaymentData.remainingDueDate}.`
         });
@@ -817,7 +829,7 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
               <View style={styles.setupGateInputGroup}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={styles.setupGateLabel}>{t("Upi id") || "UPI ID"}</Text>
-                  {upiError && <Text style={{ fontSize: 11, color: COLORS.dangerRed, fontWeight: '700' }}>Invalid UPI ID</Text>}
+                  {upiError && <Text style={{ fontSize: 11, color: COLORS.dangerRed, fontWeight: '700' }}>{upiError}</Text>}
                 </View>
                 <View style={[
                     styles.setupGateInput, 
@@ -960,37 +972,26 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
                   <Text style={styles.headerSubtitle}>{t("Manage payments") || "Manage your property payments"}</Text>
                 )}
               </View>
-              <View style={styles.headerRightActions}>
-                {ownerNotifs.length > 0 && (
-                  <TouchableOpacity 
-                    style={styles.notifIconBtn} 
-                    onPress={() => setNotifModalVisible(true)}
-                  >
-                    <Ionicons name="notifications" size={24} color={COLORS.primaryBlue} />
-                    <View style={styles.notifBadge}>
-                      <Text style={styles.notifBadgeText}>{ownerNotifs.length}</Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity 
-                  style={styles.setupPaymentBtn} 
-                  onPress={() => setShowUpiModal(true)}
-                >
-                  <LinearGradient
-                    colors={['#8B5CF6', '#6D28D9']}
-                    style={styles.setupPaymentGradient}
-                  >
-                    {qrCode ? (
-                      <Image source={{ uri: qrCode }} style={styles.miniQrPreview} />
-                    ) : (
-                      <MaterialCommunityIcons name="qrcode-edit" size={20} color="#FFF" />
-                    )}
-                    <Text style={styles.setupPaymentText}>
-                      {upiId || qrCode ? (t("Edit payment details") || "Edit Payment Details") : (t("Payment setup") || "Payment Setup")}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
+      <View style={styles.headerRightActions}>
+        <TouchableOpacity 
+          style={styles.setupPaymentBtn} 
+          onPress={() => setShowUpiModal(true)}
+        >
+          <LinearGradient
+            colors={['#8B5CF6', '#6D28D9']}
+            style={styles.setupPaymentGradient}
+          >
+            {qrCode ? (
+              <Image source={{ uri: qrCode }} style={styles.miniQrPreview} />
+            ) : (
+              <MaterialCommunityIcons name="qrcode-edit" size={20} color="#FFF" />
+            )}
+            <Text style={styles.setupPaymentText}>
+              {upiId || qrCode ? (t("Edit payment details") || "Edit Payment Details") : (t("Payment setup") || "Payment Setup")}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
             </View>
 
             <View style={styles.headerActions}>
@@ -1102,8 +1103,8 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>
               {filterTab === 'all' ? (t("All tenants") || "All Tenants") : 
-               filterTab === 'paid' ? (t("Paid payments") || "Paid Payments") : 
-               (t("Due payments") || "Due Payments")}
+               filterTab === 'paid' ? (t("Collected payments") || "Collected Payments") : 
+               (t("Pending payments") || "Pending Payments")}
             </Text>
             
           </View>
@@ -1210,14 +1211,6 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
           {/* Reminder Section */}
           <View style={styles.reminderSection}>
             <View style={styles.reminderContent}>
-              <LinearGradient
-                colors={['#8B5CF6', '#6D28D9']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.reminderIconBg}
-              >
-                <Ionicons name="notifications" size={32} color="#FFF" />
-              </LinearGradient>
               <View style={styles.reminderText}>
                 <Text style={styles.reminderTitle}>{t("Stay on top of payments") || "Stay on top of your payments"}</Text>
                 <Text style={styles.reminderSubtitle}>{t("Send reminders pending") || "Send reminders to tenants with pending payments."}</Text>
@@ -1277,7 +1270,7 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
                       <Text style={styles.pendingAmount}>₹{tenant.amount.toLocaleString()}</Text>
                       <TouchableOpacity 
                         style={styles.sendRemindBtn}
-                        onPress={() => handleSendReminder(tenant.name, tenant.tenant_email)}
+                        onPress={() => handleSendReminder(tenant.name, tenant.tenant_phone, tenant.amount)}
                       >
                         <Ionicons name="send-outline" size={14} color={COLORS.primaryBlue} />
                         <Text style={styles.sendRemindText}>{t("Send") || "Send"}</Text>
@@ -1402,29 +1395,48 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
                         <Text style={styles.proofAmount}>₹{proof.amount.toLocaleString()}</Text>
                       </View>
 
-                      <Text style={[styles.proofLabel, { marginTop: 12 }]}>{t("Payment screenshot") || "Payment Screenshot"}</Text>
-                      <TouchableOpacity 
-                        style={styles.screenshotPlaceholder}
-                        onPress={() => setSelectedScreenshot(proof.proofImage)}
-                      >
-                        {proof.proofImage ? (
-                          <View style={{ width: '100%', height: '100%' }}>
-                            <Image 
-                              source={{ uri: proof.proofImage }} 
-                              style={styles.screenshotImage} 
-                            />
-                            <View style={styles.zoomBadge}>
-                              <Ionicons name="expand" size={16} color="#FFF" />
-                              <Text style={styles.zoomText}>{t("Tap to zoom") || "Tap to Zoom"}</Text>
+                      {proof.proofImage ? (
+                        <>
+                          <Text style={[styles.proofLabel, { marginTop: 12 }]}>{t("Payment screenshot") || "Payment Screenshot"}</Text>
+                          
+                          {proof.description && (
+                            <View style={styles.notifMessageContainer}>
+                              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#6366F1" />
+                              <Text style={styles.notifMessage}>{proof.description}</Text>
                             </View>
+                          )}
+
+                          <TouchableOpacity 
+                            style={styles.screenshotPlaceholder}
+                            onPress={() => setSelectedScreenshot(proof.proofImage)}
+                          >
+                            <View style={{ width: '100%', height: '100%' }}>
+                              <Image 
+                                source={{ uri: proof.proofImage }} 
+                                style={styles.screenshotImage} 
+                              />
+                              <View style={styles.zoomBadge}>
+                                <Ionicons name="expand" size={16} color="#FFF" />
+                                <Text style={styles.zoomText}>{t("Tap to zoom") || "Tap to Zoom"}</Text>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <View style={styles.cashPaymentNoticeContainer}>
+                          <View style={styles.cashNoticeHeader}>
+                            <MaterialCommunityIcons name="cash-multiple" size={32} color="#10B981" />
+                            <Text style={styles.cashNoticeTitle}>Cash Payment Requested</Text>
                           </View>
-                        ) : (
-                          <>
-                            <MaterialCommunityIcons name="file-image-outline" size={48} color={COLORS.textLight} />
-                            <Text style={{color: COLORS.textLight, marginTop: 8}}>{t("Screenshot preview") || "Screenshot Preview"}</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
+                          <Text style={styles.cashNoticeSubtitle}>The tenant has requested to pay in cash.</Text>
+                          {proof.description && (
+                            <View style={styles.cashNoteContainer}>
+                              <Text style={styles.cashNoteLabel}>Tenant's Note:</Text>
+                              <Text style={styles.cashNoteText}>"{proof.description}"</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
 
                       <View style={styles.proofFooter}>
                         <Text style={styles.proofTimestamp}>{proof.timestamp}</Text>
@@ -1447,14 +1459,14 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
                           </TouchableOpacity>
                           <TouchableOpacity 
                              style={styles.rejectSmallBtn}
-                             onPress={() => handleRejectPayment(proof.id, proof.txn_ref, proof.tenant_email, proof.name)}
+                             onPress={() => handleRejectPayment(proof.id, proof.txn_ref, proof.tenant_phone, proof.name)}
                            >
                              <Ionicons name="close" size={10} color="#FFF" />
                              <Text style={styles.rejectSmallText}>{t("Reject") || "Reject"}</Text>
                            </TouchableOpacity>
                            <TouchableOpacity 
                              style={styles.verifySmallBtn}
-                             onPress={() => handleVerifyPayment(proof.id, proof.tenantId, proof.txn_ref, proof.tenant_email, proof.name)}
+                             onPress={() => handleVerifyPayment(proof.id, proof.tenantId, proof.txn_ref, proof.tenant_phone, proof.name)}
                            >
                             <Ionicons name="checkmark" size={18} color="#FFF" />
                             <Text style={styles.verifySmallText}>{t("Verify") || "Verify"}</Text>
@@ -1750,7 +1762,7 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
                   <View style={styles.inputGroupPremium}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={styles.inputLabelPremium}>{t("Upi id label") || "Your Personal UPI ID"}</Text>
-                      {upiError && <Text style={{ fontSize: 11, color: COLORS.dangerRed, fontWeight: '700' }}>Invalid UPI ID</Text>}
+                      {upiError && <Text style={{ fontSize: 11, color: COLORS.dangerRed, fontWeight: '700' }}>{upiError}</Text>}
                     </View>
                     <View style={[
                       styles.inputContainerPremium, 
@@ -1881,76 +1893,6 @@ const [selectedScreenshot, setSelectedScreenshot] = useState(null);
         </View>
       </Modal>
 
-      {/* Owner Notifications/Messages Modal */}
-      <Modal visible={notifModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setNotifModalVisible(false)}
-          />
-          <View style={styles.notifModalContent}>
-            <View style={styles.modalHandle} />
-            <View style={styles.notifModalHeader}>
-              <View>
-                <Text style={styles.notifModalTitle}>{t("Tenant messages") || "Tenant Messages"}</Text>
-                <Text style={styles.notifModalSubtitle}>{t("Recent reports") || "Recent payment reports and notes"}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setNotifModalVisible(false)}>
-                <Ionicons name="close-circle" size={32} color={COLORS.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.notifList}>
-              {ownerNotifs.length > 0 ? (
-                ownerNotifs.map((notif, index) => (
-                  <View key={notif.id || index} style={styles.notifCard}>
-                    <View style={styles.notifCardTop}>
-                      <View style={styles.notifTenantInfo}>
-                        <View style={styles.notifAvatar}>
-                          <Text style={styles.notifAvatarText}>{notif.tenantName?.charAt(0)}</Text>
-                        </View>
-                        <View>
-                          <Text style={styles.notifTenantName}>{notif.tenantName}</Text>
-                          <Text style={styles.notifTypeBadge}>{notif.type}</Text>
-                        </View>
-                      </View>
-                      <View style={styles.notifAmountBox}>
-                        <Text style={styles.notifAmount}>₹{notif.amount}</Text>
-                      </View>
-                    </View>
-                    
-                    <View style={styles.notifMessageContainer}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={16} color="#6366F1" />
-                      <Text style={styles.notifMessage}>{notif.message}</Text>
-                    </View>
-                    
-                    <View style={styles.notifCardFooter}>
-                      <Text style={styles.notifDate}>{notif.date}</Text>
-                      <TouchableOpacity 
-                        style={styles.notifActionBtn}
-                        onPress={() => {
-                          setNotifModalVisible(false);
-                          setFilterTab(notif.type === 'Digital Proof' ? 'all' : 'due');
-                        }}
-                      >
-                        <Text style={styles.notifActionText}>{t("View details") || "View Details"}</Text>
-                        <Ionicons name="chevron-forward" size={14} color="#6366F1" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              ) : (
-                <View style={styles.emptyNotifs}>
-                  <Ionicons name="mail-open-outline" size={48} color="#CBD5E1" />
-                  <Text style={styles.emptyNotifText}>{t("No new messages") || "No new messages from tenants"}</Text>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
     </SafeAreaView>
   );
 };
@@ -1960,169 +1902,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  notifIconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  notifBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: COLORS.dangerRed,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  notifBadgeText: {
-    color: '#FFF',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  notifModalContent: {
-    width: '90%',
-    maxHeight: '80%',
-    backgroundColor: '#FFF',
-    borderRadius: 30,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  notifModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  notifModalTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  notifModalSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  notifList: {
-    marginTop: 10,
-  },
-  notifCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  notifCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  notifTenantInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  notifAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#6366F1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  notifAvatarText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  notifTenantName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  notifTypeBadge: {
-    fontSize: 11,
-    color: '#6366F1',
-    fontWeight: '600',
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginTop: 2,
-    alignSelf: 'flex-start',
-  },
-  notifAmountBox: {
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  notifAmount: {
-    color: '#16A34A',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  notifMessageContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    gap: 8,
-    marginBottom: 12,
-  },
-  notifMessage: {
-    flex: 1,
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
-  },
-  notifCardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  notifDate: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  notifActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  notifActionText: {
-    fontSize: 13,
-    color: '#6366F1',
-    fontWeight: '700',
-  },
-  emptyNotifs: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    gap: 12,
-  },
-  emptyNotifText: {
-    fontSize: 15,
-    color: '#94A3B8',
-    fontWeight: '600',
   },
   setupContainer: {
     flexGrow: 1,
@@ -2976,30 +2755,6 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 4,
   },
-  notificationBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: COLORS.dangerRed,
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  notificationBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFF',
-  },
   headerActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -3150,7 +2905,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16, // Consistent gap
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -3230,11 +2985,13 @@ const styles = StyleSheet.create({
   requestBtn: {
     backgroundColor: COLORS.primaryBlue,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minWidth: 140,
+    alignItems: 'center',
   },
   requestBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#FFF',
   },
@@ -3315,6 +3072,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 16,
     padding: 16,
+    marginBottom: 16, // Added gap between cards
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -3343,7 +3101,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   markCashBtn: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: COLORS.successGreen,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
@@ -3358,14 +3116,14 @@ const styles = StyleSheet.create({
   fullPaidBtnSmall: {
     backgroundColor: COLORS.successGreen,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
     minWidth: 140,
     alignItems: 'center',
   },
   fullPaidBtnTextSmall: {
     color: '#FFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   cashPaidBadge: {
@@ -3951,9 +3709,73 @@ const styles = StyleSheet.create({
     height: height,
     resizeMode: 'contain',
   },
+  cashPaymentNoticeContainer: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 20,
+    padding: 24,
+    marginVertical: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#bbf7d0',
+    borderStyle: 'dashed',
+  },
+  cashNoticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  cashNoticeTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  cashNoticeSubtitle: {
+    fontSize: 14,
+    color: '#047857',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  cashNoteContainer: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cashNoteLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  cashNoteText: {
+    fontSize: 15,
+    color: '#1E293B',
+    fontStyle: 'italic',
+  },
+  notifMessageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+    marginTop: 4,
+    gap: 8,
+  },
+  notifMessage: {
+    fontSize: 14,
+    color: '#312E81',
+    fontWeight: '500',
+    flex: 1,
+  }
 });
 
 
 export default OwnerPaymentScreen;
-
-

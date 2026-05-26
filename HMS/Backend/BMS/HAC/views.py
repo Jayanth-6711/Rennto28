@@ -18,7 +18,7 @@ from datetime import timedelta, datetime
 from dateutil.relativedelta import relativedelta
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-
+from .jwt_utils import generate_jwt_token, jwt_required
 from .models import (
     Owners, StayHostelDetails, ApartmentStayDetails, CommericialDetails,
     Tenent, HostelFloorRoom, ApartmentFloorUnit, CommercialFloor,
@@ -33,6 +33,7 @@ from .serializers import (
 )
 
 @api_view(['GET'])
+@jwt_required()
 def admin_home(request):
     """
     Returns summary counts for the Admin Dashboard.
@@ -57,6 +58,7 @@ def admin_home(request):
 
 
 @api_view(['GET'])
+@jwt_required()
 def get_all_property_basic_details(request):
     """
     Returns basic details of all properties for the Properties page.
@@ -111,6 +113,7 @@ def get_all_property_basic_details(request):
  
 
 @api_view(['GET'])
+@jwt_required()
 def get_payment_details(request, phone):
     """
     Returns payment details summary for an owner or property.
@@ -135,6 +138,7 @@ def get_payment_details(request, phone):
  
 
 @api_view(['POST'])
+@jwt_required()
 def suspension_reason(request):
     """
     Saves or updates the suspension reason for an owner.
@@ -159,6 +163,7 @@ def suspension_reason(request):
 
 
 @api_view(['GET', 'DELETE'])
+@jwt_required()
 def get_suspension_reason(request, phone):
     """
     Retrieves or deletes the suspension record for a specific owner.
@@ -203,6 +208,8 @@ def register_owner(request):
         data = request.data.copy()
         phone = data.get("phone") or data.get("phone_number")
         if phone:
+            if len(phone) < 10:
+                phone = phone[-10:]
             data["phone"] = phone
             if not data.get("name"):
                 data["name"] = f"Owner {phone}"
@@ -379,13 +386,15 @@ def register_owner(request):
         # =========================
         # ✅ FINAL RESPONSE
         # =========================
+        token = generate_jwt_token(owner.id, 'owner')
         return Response(
             {
                 "message": "Registration successful. Wait for approval (2 days)",
                 "status": owner.status,
                 "created_at": owner.created_at,
                 "phone": owner.phone,
-                "owner_id": owner.id
+                "owner_id": owner.id,
+                "token": token
             },
             status=status.HTTP_201_CREATED
         )
@@ -409,12 +418,19 @@ def register_tenent(request):
     print("Request Data:", request.data)
     print("Request Files:", request.FILES)
 
-    serializer = TenentSerializer(data=request.data)
+    data = request.data.copy()
+    phone = data.get("phone") or data.get("phone_number")
+    if phone and len(phone) < 10:
+        data["phone"] = phone[-10:]
+        
+    serializer = TenentSerializer(data=data)
     if serializer.is_valid():
-        serializer.save()
+        tenant = serializer.save()
+        token = generate_jwt_token(tenant.id, 'tenant')
         return Response(
             {
                 "message": "Tenent registered successfully",
+                "token": token,
                 "data": serializer.data
             },
             status=status.HTTP_201_CREATED)
@@ -425,6 +441,33 @@ def register_tenent(request):
         },
         status=status.HTTP_400_BAD_REQUEST
     )
+
+@api_view(['POST'])
+@jwt_required()
+def save_push_token(request):
+    try:
+        phone = request.data.get('phone')
+        role = request.data.get('role')
+        token = request.data.get('push_token')
+
+        if not phone or not role or not token:
+            return Response({"error": "Missing parameters"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if role == 'tenant':
+            user = Tenent.objects.get(phone=phone)
+        elif role == 'owner':
+            user = Owners.objects.get(phone=phone)
+        else:
+            return Response({"error": "Invalid role"}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.push_token = token
+        user.save()
+        return Response({"message": "Push token saved successfully"}, status=status.HTTP_200_OK)
+
+    except (Tenent.DoesNotExist, Owners.DoesNotExist):
+        return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -441,11 +484,15 @@ def tenant_login(request):
             tenant = Tenent.objects.get(phone=phone)
 
             if tenant.password == password:
+                # Generate JWT token
+                token = generate_jwt_token(user_id=tenant.id, role='tenant', phone=tenant.phone)
+                
                 return Response({
                     "message": "Login Successful",
                     "tenant_id": tenant.id,
                     "name": tenant.name,
-                    "phone": tenant.phone
+                    "phone": tenant.phone,
+                    "token": token
                 }, status=status.HTTP_200_OK)
 
             else:
@@ -474,7 +521,7 @@ def owner_login(request):
            
             if owner.password != password:
                 return Response(
-                    {"error", "Invalid Password"},
+                    {"error": "Invalid Password"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
            
@@ -496,17 +543,17 @@ def owner_login(request):
                     status = status.HTTP_403_FORBIDDEN
                 )
             if owner.status == "active" and owner.password == password:
+                # Generate JWT token
+                token = generate_jwt_token(user_id=owner.id, role='owner', phone=owner.phone)
+                
                 return Response(
                     {
                         "message": "Login Successful",
+                        "token": token
                     },
                     status = status.HTTP_200_OK
                 )
-           
-   
- 
-           
- 
+            
             return Response(
                 {"error": "Invalid Password"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -520,6 +567,23 @@ def owner_login(request):
  
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+@api_view(['POST'])
+def admin_login(request):
+    """
+    Admin login endpoint. Hardcoded credentials for now.
+    """
+    phone = request.data.get('phone')
+    password = request.data.get('password')
+    
+    if phone == "admin@stayefy.com" and password == "admin123":
+        token = generate_jwt_token(user_id=1, role='admin', phone=phone)
+        return Response({
+            "message": "Login Successful",
+            "token": token
+        }, status=status.HTTP_200_OK)
+    
+    return Response({"error": "Invalid phone or password"}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 def get_hostel_step3(request, phone):
@@ -645,6 +709,7 @@ def get_hostel_step3(request, phone):
     return Response(response_data)
 
 @api_view(['GET'])
+@jwt_required()
 def get_properties_listing(request):
     property_list = []
  
@@ -665,7 +730,7 @@ def get_properties_listing(request):
     "name": hostel.hostelName,
     "address": hostel.location,
     "contact": hostel.owner.phone if hostel.owner else None,
-    "owner_email": None,
+    "owner_phone": hostel.owner.phone if hostel.owner else None,
     "owner_name": hostel.owner.name if hostel.owner else None,
     "latitude": float(hostel.latitude) if hostel.latitude else None,
     "longitude": float(hostel.longitude) if hostel.longitude else None,
@@ -688,7 +753,7 @@ def get_properties_listing(request):
             "name": apartment.apartmentName,
             "address": apartment.location,
             "contact": apartment.owner.phone if apartment.owner else None,
-            "owner_email": None,
+            "owner_phone": apartment.owner.phone if apartment.owner else None,
             "owner_name": apartment.owner.name if apartment.owner else None,
             "latitude": float(apartment.latitude) if apartment.latitude else None,
             "longitude": float(apartment.longitude) if apartment.longitude else None,
@@ -707,7 +772,7 @@ def get_properties_listing(request):
             "name": commercial.commercialName,
             "address": commercial.location,
             "contact": commercial.owner.phone if commercial.owner else None,
-            "owner_email": None,
+            "owner_phone": commercial.owner.phone if commercial.owner else None,
             "owner_name": commercial.owner.name if commercial.owner else None,
             "latitude": float(commercial.latitude) if commercial.latitude else None,
             "longitude": float(commercial.longitude) if commercial.longitude else None,
@@ -728,6 +793,7 @@ def get_properties_listing(request):
 
 
 @api_view(['POST'])
+@jwt_required()
 def registerbeds(request):
     print("🔥 Incoming Data:", request.data)
     serializer = TenantBedSerializer(data=request.data)
@@ -742,6 +808,7 @@ def registerbeds(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
+@jwt_required()
 def registerapartmentbeds(request):
     print("🔥 Incoming Data:", request.data)
     serializer = ApartmentBedSerializer(data=request.data)
@@ -756,6 +823,7 @@ def registerapartmentbeds(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
+@jwt_required()
 def registercommercialbeds(request):
     print("🔥 Incoming Data:", request.data)
     serializer = CommercialBedSerializer(data=request.data)
@@ -773,6 +841,7 @@ def registercommercialbeds(request):
 
 
 @api_view(['GET'])
+@jwt_required()
 def get_tenantsbeds(request, phone):
     tenants = TenantBeds.objects.filter(owner_phone=phone)
     serializer = TenantBedSerializer(tenants, many=True, context={'request': request})
@@ -783,6 +852,7 @@ def get_tenantsbeds(request, phone):
     })
 
 @api_view(['GET'])
+@jwt_required()
 def get_apartmentbeds(request, phone):
     tenants = ApartmentTenantBeds.objects.filter(owner_phone=phone)
     serializer = ApartmentBedSerializer(tenants, many=True, context={'request': request})
@@ -792,6 +862,7 @@ def get_apartmentbeds(request, phone):
     })
 
 @api_view(['GET'])
+@jwt_required()
 def get_commercialbeds(request, phone):
     tenants = CommercialTenantBeds.objects.filter(owner_phone=phone)
     serializer = CommercialBedSerializer(tenants, many=True, context={'request': request})
@@ -842,6 +913,7 @@ def get_commercialbeds(request, phone):
 #     }, status=status.HTTP_200_OK)
 
 @api_view(['DELETE'])
+@jwt_required()
 def delete_hostel_tenant(request, id):
 
     tenant = TenantBeds.objects.filter(id=id).first()
@@ -859,6 +931,7 @@ def delete_hostel_tenant(request, id):
     })
 
 @api_view(['DELETE'])
+@jwt_required()
 def delete_apartment_tenant(request, id):
 
     tenant = ApartmentTenantBeds.objects.filter(id=id).first()
@@ -876,6 +949,7 @@ def delete_apartment_tenant(request, id):
     })
 
 @api_view(['DELETE'])
+@jwt_required()
 def delete_commercial_tenant(request, id):
 
     tenant = CommercialTenantBeds.objects.filter(id=id).first()
@@ -931,6 +1005,7 @@ def delete_commercial_tenant(request, id):
 
 
 @api_view(['PATCH'])
+@jwt_required()
 def update_hostel_tenant(request, id):
     tenant = TenantBeds.objects.filter(id=id).first()
 
@@ -957,6 +1032,7 @@ def update_hostel_tenant(request, id):
     return Response(serializer.errors, status=400)
 
 @api_view(['PATCH'])
+@jwt_required()
 def update_apartment_tenant(request, id):
     tenant = ApartmentTenantBeds.objects.filter(id=id).first()
 
@@ -980,6 +1056,7 @@ def update_apartment_tenant(request, id):
     return Response(serializer.errors, status=400)
 
 @api_view(['PATCH'])
+@jwt_required()
 def update_commercial_tenant(request, id):
     tenant = CommercialTenantBeds.objects.filter(id=id).first()
 
@@ -1006,6 +1083,7 @@ def update_commercial_tenant(request, id):
     return Response(serializer.errors, status=400)
 
 @api_view(['GET'])
+@jwt_required()
 def get_all_steps_data(request):
     owners = Owners.objects.all()
 
@@ -1215,6 +1293,7 @@ def get_all_steps_data(request):
 
 
 @api_view(['GET'])
+@jwt_required()
 def tenantdetails(request, phone):
  
     try:
@@ -1348,6 +1427,7 @@ def tenantdetails(request, phone):
 
 
 @api_view(['PUT'])
+@jwt_required()
 def tenant_profile_update(request, phone):
     try:
         tenant = Tenent.objects.get(phone=phone)
@@ -1365,31 +1445,70 @@ def tenant_profile_update(request, phone):
         return Response({
             "error": "Tenant not found"
         }, status=status.HTTP_404_NOT_FOUND)
-
 @api_view(['PUT'])
 def owner_profile_update(request, phone):
     try:
-        owner = Owners.objects.get(phone=phone)
+        # Robust lookup: strip spaces and case-insensitive
+        owner_phone = phone.strip()
+        owner = Owners.objects.filter(phone__iexact=owner_phone).first()
+       
+        if not owner:
+            return Response({
+                "message": f"Owner with phone {owner_phone} not found",
+                "error": "Owner not found"
+            }, status=status.HTTP_404_NOT_FOUND)
  
+        # Update owner basic info
         owner.name = request.data.get('name', owner.name)
-        owner.phone = request.data.get('phone', owner.phone)
-        
-        # Also handle profile image if provided
-        if 'owner_img_field' in request.FILES and hasattr(owner, 'owner_img_field'):
+       
+        # Handle both 'phone' and 'phoneNumber' from different frontend parts
+        new_phone = request.data.get('phone') or request.data.get('phoneNumber')
+        if new_phone and new_phone.strip():
+            stripped_new_phone = new_phone.strip()
+            # Check if this phone is already taken by ANOTHER owner
+            existing = Owners.objects.filter(phone__iexact=stripped_new_phone).exclude(id=owner.id).first()
+            if existing:
+                return Response({
+                    "message": "This phone number is already registered with another account.",
+                    "error": "Phone already exists"
+                }, status=status.HTTP_400_BAD_REQUEST)
+            owner.phone = stripped_new_phone
+       
+        if 'owner_img_field' in request.FILES:
             owner.owner_img_field = request.FILES['owner_img_field']
  
         owner.save()
  
+        # Handle Bank/UPI Details
+        bank = BankDetails.objects.filter(owner=owner).first()
+        if not bank:
+            bank = BankDetails.objects.create(owner=owner)
+       
+        upi_id = request.data.get('upiId')
+        if upi_id:
+            bank.upi_id = upi_id.strip()
+           
+        if 'qrCode' in request.FILES:
+            bank.qr_code = request.FILES['qrCode']
+        elif 'qr_code' in request.FILES:
+            bank.qr_code = request.FILES['qr_code']
+           
+        bank.save()
+ 
         return Response({
-            "message": "Profile updated successfully"
+            "message": "Profile and payment details updated successfully",
+            "upiId": bank.upi_id,
+            "phoneNumber": owner.phone,
+            "qrCode": request.build_absolute_uri(bank.qr_code.url) if hasattr(bank, 'qr_code') and getattr(bank, 'qr_code') else None
         }, status=status.HTTP_200_OK)
  
-    except Owners.DoesNotExist:
-        return Response({
-            "error": "Owner not found"
-        }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        import traceback
+        traceback.print_exc()
+        return Response({
+            "message": f"Update failed: {str(e)}",
+            "error": str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 # @api_view(['POST'])
 # def update_status(request):
@@ -1402,6 +1521,7 @@ def owner_profile_update(request, phone):
  
 #     return Response({"message": "Status updated"})
 @api_view(['POST'])
+@jwt_required()
 def update_status(request):
     tenant_phone = request.data.get("tenant_phone")
     owner_phone = request.data.get("owner_phone")
@@ -1420,6 +1540,7 @@ def update_status(request):
         return Response({"error": "Request not found"}, status=404)
     
 @api_view(['GET'])
+@jwt_required()
 def tenant_by_phone(request, phone):
     try:
         tenant = Tenent.objects.get(phone=phone)
@@ -1477,6 +1598,7 @@ from dateutil.relativedelta import relativedelta
 import time
 
 @api_view(['GET'])
+@jwt_required()
 def get_tenant_payment_details(request, phone):
  
     try:
@@ -1779,12 +1901,17 @@ def get_tenant_payment_details(request, phone):
         ).order_by('-id').first()
  
         qr_code_url = None
-        if bank_details and bank_details.qr_code:
+        if bank_details and hasattr(bank_details, 'qr_code') and bank_details.qr_code:
             try:
                 qr_code_url = request.build_absolute_uri(bank_details.qr_code.url)
             except Exception as qr_err:
                 print("QR code URL generation failed or file missing:", qr_err)
  
+        payment_reminder = Notification.objects.filter(
+            recipient_phone__iexact=tenant_phone,
+            type__in=['REMINDER', 'PAYMENT_REQUEST']
+        ).order_by('-created_at').first()
+
         response_data = {
             "ownerName":
                 owner.name if owner.name
@@ -1841,14 +1968,14 @@ def get_tenant_payment_details(request, phone):
  
         }
  
-        if owner_issue:
-            response_data['ownerIssue'] = {
-                "id": owner_issue.id,
-                "title": owner_issue.title,
-                "message": owner_issue.title,
-                "details": owner_issue.description
+        if payment_reminder:
+            response_data['paymentReminder'] = {
+                "id": payment_reminder.id,
+                "title": payment_reminder.title,
+                "message": payment_reminder.message,
+                "type": payment_reminder.type,
+                "created_at": payment_reminder.created_at
             }
- 
         return Response(response_data)
  
     except Tenent.DoesNotExist:
@@ -1878,6 +2005,7 @@ def get_tenant_payment_details(request, phone):
     
 
 @api_view(['GET'])
+@jwt_required()
 def owner_admin_list(request):
     owners = Owners.objects.all().order_by('-id')
  
@@ -1914,6 +2042,7 @@ def owner_admin_list(request):
  
  
 @api_view(['GET'])
+@jwt_required()
 def get_owner_full_details(request, phone):
     try:
         owner = Owners.objects.get(phone=phone)
@@ -2135,6 +2264,7 @@ def get_owner_full_details(request, phone):
  
 
 @api_view(['PATCH'])
+@jwt_required()
 def update_owner_status(request, phone):
     try:
         owner = Owners.objects.get(phone=phone)
@@ -2221,6 +2351,7 @@ def check_owner_status(request, phone):
  
  
 @api_view(['POST'])
+@jwt_required()
 def update_request_status(request):
     request_id = request.data.get("id")
     status_value = request.data.get("status")
@@ -2269,6 +2400,7 @@ from asgiref.sync import async_to_sync
 
 
 @api_view(['POST'])
+@jwt_required()
 def send_join_request(request):
  
     print("REQUEST DATA:", request.data)
@@ -2457,6 +2589,7 @@ def send_join_request(request):
  
 
 @api_view(['GET'])
+@jwt_required()
 def owner_requests(request, phone):
     try:
         owner = Owners.objects.get(phone=phone)
@@ -2493,16 +2626,14 @@ def owner_requests(request, phone):
 
 
 @api_view(['GET'])
+@jwt_required()
 def tenant_notifications(request, identifier):
     """
     Returns join request notifications for a tenant identified by email or phone.
     """
     # Determine tenant by email or phone
-    try:
-        if "@" in identifier:
-            tenant = Tenent.objects.get(email=identifier)
-        else:
-            tenant = Tenent.objects.get(phone=identifier)
+    try: 
+        tenant = Tenent.objects.get(phone=identifier)    
     except Tenent.DoesNotExist:
         return Response({"error": "Tenant not found"}, status=404)
  
@@ -2542,14 +2673,14 @@ def create_issue(request):
     files = request.FILES
     try:
         tenant_id = data.get("tenant_id")
-        email = data.get("email")
+        phone = data.get("phone") or data.get("phone_number")  # Legacy support for old frontend that sends phone instead of tenant_id
  
         tenant = None
         if tenant_id:
             tenant = Tenent.objects.get(id=tenant_id)
-        elif email:
-            # Note: email parameter might contain phone number from old frontend code
-            tenant = Tenent.objects.get(phone=email)
+        elif phone:
+            # Note: phone parameter might contain phone number from old frontend code
+            tenant = Tenent.objects.get(phone=phone)
        
         if not tenant:
             return Response({"error": "Tenant not found"}, status=404)
@@ -2611,21 +2742,23 @@ def create_issue(request):
         return Response({"error": str(e)}, status=400) 
  
 @api_view(['GET'])
-def tenant_issues(request, id):
-    # `email` may actually be an email string or a numeric tenant ID
-    identifier = id
+@jwt_required()
+def tenant_issues(request, identifier):
     try:
-        tenant = Tenent.objects.get(id=identifier)
-    except Tenent.DoesNotExist:
-        return Response({"error": "Tenant not found"}, status=400)
+        tenant = Tenent.objects.filter(phone=identifier).first()
+        if not tenant:
+            return Response({"error": "Tenant not found"}, status=400)
  
-    # Exclude notifications/reminders that were mistakenly saved as Issues
-    issues = Issue.objects.filter(tenant=tenant).exclude(title__icontains='Reminder').order_by('-created_at')
-    serializer = IssueSerializer(issues, many=True)
-    return Response(serializer.data)
+        # Exclude notifications/reminders that were mistakenly saved as Issues
+        issues = Issue.objects.filter(tenant=tenant).exclude(title__icontains='Reminder').order_by('-created_at')
+        serializer = IssueSerializer(issues, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 
 
 @api_view(['GET'])
+@jwt_required()
 def owner_issues(request, phone):
     try:
         owner = Owners.objects.get(phone=phone)
@@ -2653,6 +2786,7 @@ def owner_issues(request, phone):
     return Response(data)
  
 @api_view(['PATCH'])
+@jwt_required()
 def update_issue_status(request, issue_id):
     try:
         issue = Issue.objects.get(id=issue_id)
@@ -2685,6 +2819,7 @@ def update_issue_status(request, issue_id):
 #     return Response({"message": "Comment updated"})
  
 @api_view(['PATCH'])
+@jwt_required()
 def update_issue_comment(request, issue_id):
     try:
         issue = Issue.objects.get(id=issue_id)
@@ -2707,10 +2842,12 @@ def update_issue_comment(request, issue_id):
     }, status=200) 
 
 @api_view(['GET'])
+@jwt_required()
 def test_create_issue(request):
     return Response({"msg":"test ok"}, status=200)
  
 @api_view(['DELETE'])
+@jwt_required()
 def delete_issue(request, issue_id):
     try:
         issue = Issue.objects.get(id=issue_id)
@@ -2722,6 +2859,7 @@ def delete_issue(request, issue_id):
  
  
 @api_view(['PATCH'])
+@jwt_required()
 def update_issue(request, id):
     try:
         issue = Issue.objects.get(id=id)
@@ -2747,10 +2885,11 @@ def update_issue(request, id):
 from django.db.models import Q
 
 @api_view(['GET'])
-def check_request_status(request, tenant_phone, owner_email, property_name):
+@jwt_required()
+def check_request_status(request, tenant_phone, owner_phone, property_name):
     try:
         tenant = Tenent.objects.get(phone=tenant_phone.strip())
-        owner = Owners.objects.get(email=owner_email.strip())
+        owner = Owners.objects.get(phone=owner_phone.strip())
  
         stripped_name = property_name.strip()
  
@@ -2790,17 +2929,18 @@ def check_request_status(request, tenant_phone, owner_email, property_name):
         })
 
 @api_view(['POST'])
+@jwt_required()
 def withdraw_request(request):
-    tenant_email = (request.data.get("tenant_email") or request.data.get("tenantEmail") or "").strip()
-    owner_email = (request.data.get("owner_email") or request.data.get("ownerEmail") or "").strip()
+    tenant_phone = (request.data.get("tenant_phone") or request.data.get("tenantPhone") or "").strip()
+    owner_phone = (request.data.get("owner_phone") or request.data.get("ownerPhone") or "").strip()
     property_name = (request.data.get("property_name") or request.data.get("propertyName") or "").strip()
    
     print("--- DB DIAGNOSTIC ---")
-    print(f"Targeting: Tenant({tenant_email}), Owner({owner_email}), Property({property_name})")
+    print(f"Targeting: Tenant({tenant_phone}), Owner({owner_phone}), Property({property_name})")
    
     try:
-        tenant = Tenent.objects.get(email=tenant_email)
-        owner = Owners.objects.get(email=owner_email)
+        tenant = Tenent.objects.get(phone=tenant_phone)
+        owner = Owners.objects.get(phone=owner_phone)
        
         print(f"   [BACKEND] Found Tenant: {tenant.name}, Owner: {owner.name}")
        
@@ -2839,15 +2979,15 @@ def withdraw_request(request):
         deleted_allotments = 0
        
         # 1. Hostel Beds
-        db_beds_deleted = TenantBeds.objects.filter(email=tenant_email, owner_email=owner_email).delete()[0]
+        db_beds_deleted = TenantBeds.objects.filter(phone=tenant_phone, owner_phone=owner_phone).delete()[0]
         deleted_allotments += db_beds_deleted
        
         # 2. Apartment Units
-        db_apts_deleted = ApartmentTenantBeds.objects.filter(email=tenant_email, owner_email=owner_email).delete()[0]
+        db_apts_deleted = ApartmentTenantBeds.objects.filter(phone=tenant_phone, owner_phone=owner_phone).delete()[0]
         deleted_allotments += db_apts_deleted
        
         # 3. Commercial Units
-        db_comm_deleted = CommercialTenantBeds.objects.filter(email=tenant_email, owner_email=owner_email).delete()[0]
+        db_comm_deleted = CommercialTenantBeds.objects.filter(phone=tenant_phone, owner_phone=owner_phone).delete()[0]
         deleted_allotments += db_comm_deleted
        
         if deleted_allotments > 0:
@@ -2870,9 +3010,9 @@ def withdraw_request(request):
             # WebSocket: Notify Owner that request was withdrawn
             try:
                 channel_layer = get_channel_layer()
-                sanitized_email = owner_email.replace("@", "_").replace(".", "_")
+                sanitized_phone = owner_phone.replace("@", "_").replace(".", "_")
                
-                for group in [f"owner_status_{sanitized_email}", f"user_notifications_{sanitized_email}"]:
+                for group in [f"owner_status_{sanitized_phone}", f"user_notifications_{sanitized_phone}"]:
                     async_to_sync(channel_layer.group_send)(
                         group,
                         {
@@ -2880,7 +3020,7 @@ def withdraw_request(request):
                             "content": {
                                 "type": "request_withdrawn",
                                 "message": f"{tenant.name} has withdrawn their request",
-                                "tenant_email": tenant_email,
+                                "tenant_phone": tenant_phone,
                                 "id": None,
                                 "status": "withdrawn"
                             }
@@ -2907,6 +3047,7 @@ def withdraw_request(request):
 # Step 1: Send Reset Password phone
 # -----------------------------
 @api_view(['POST'])
+@jwt_required()
 def forgot_password(request):
     phone = request.data.get('phone')
     if not phone:
@@ -2940,6 +3081,7 @@ def forgot_password(request):
 # Step 2: Reset Password
 # -----------------------------
 @api_view(['POST'])
+@jwt_required()
 def reset_password(request, token):
     new_password = request.data.get('newPassword')
     if not new_password:
@@ -2958,6 +3100,7 @@ def reset_password(request, token):
     return Response({"message": "Password has been reset successfully"})
 
 @api_view(['DELETE'])
+@jwt_required()
 def delete_tenent_request(request, phone):
     # Update JoinRequest status so the owner can still see it as 'withdrawn'
     tenantsreq = JoinRequest.objects.filter(tenant__phone=phone)
@@ -2987,6 +3130,7 @@ def delete_tenent_request(request, phone):
 
 
 @api_view(['POST'])
+@jwt_required()
 def create_payment(request):
     """
     Store payment attempt when user clicks 'I Paid'
@@ -3027,6 +3171,7 @@ def create_payment(request):
  
    
 @api_view(['GET'])
+@jwt_required()
 def check_payment_status(request, txn_ref):
     try:
         payment = Payment.objects.get(txn_ref=txn_ref)
@@ -3040,6 +3185,7 @@ def check_payment_status(request, txn_ref):
         return Response({"error": "Payment not found"}, status=404)
    
 @api_view(['POST'])
+@jwt_required()
 def update_payment_status(request):
     try:
         txn_ref = request.data.get('txn_ref')
@@ -3131,6 +3277,7 @@ def update_payment_status(request):
         return Response({"error": str(e)}, status=500)
  
 @api_view(['GET'])
+@jwt_required()
 def get_owner_payments(request, phone):
     """
     Fetch all payments and active tenants for an owner.
@@ -3243,6 +3390,7 @@ def get_owner_payments(request, phone):
 
 
 @api_view(['POST'])
+@jwt_required()
 def upload_payment_screenshot(request):
     try:
         phone = request.data.get('phone', '').strip().lower()
@@ -3337,6 +3485,7 @@ def upload_payment_screenshot(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
  
 @api_view(['POST'])
+@jwt_required()
 def cash_payment(request):
     """
     Tenant confirms they have paid cash.
@@ -3367,9 +3516,9 @@ def cash_payment(request):
             }, status=status.HTTP_400_BAD_REQUEST)
  
         # Find or create a payment record
-        payment = Payment.objects.filter(
-            tenant_phone__iexact=phone,
-            status='PENDING'
+        payment_reminder = Notification.objects.filter(
+            recipient_phone__iexact=tenant_phone,
+            type__in=['REMINDER', 'PAYMENT_REQUEST']
         ).order_by('-created_at').first()
  
         if not payment:
@@ -3454,6 +3603,7 @@ def cash_payment(request):
  
 
 @api_view(['POST'])
+@jwt_required()
 def send_owner_notification(request):
     """
     Mock notification endpoint for owners.
@@ -3465,25 +3615,63 @@ def send_owner_notification(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+@jwt_required()
 def send_tenant_notification(request):
     """
-    Mock notification endpoint for tenants (Reminders).
+    Saves and sends notification to tenant (Reminders, Payment Requests).
     """
     try:
         tenant_phone = request.data.get('tenantPhone')
         title = request.data.get('title')
         message = request.data.get('message')
-        
+        n_type = request.data.get('type', 'REMINDER')
+        amount = request.data.get('amount')
+       
+        # Save to database
+        notification = Notification.objects.create(
+            recipient_phone=tenant_phone,
+            title=title,
+            message=message,
+            type=n_type
+        )
+       
         # In a real app, integrate with FCM/Push notifications here
-        print(f"NOTIFICATION TO TENANT ({tenant_phone}): {title} - {message}")
-        
-        return Response({"message": f"Reminder sent to {tenant_phone}"}, status=status.HTTP_200_OK)
+        print(f"NOTIFICATION SAVED & SENT TO TENANT ({tenant_phone}): {title} - {message}")
+       
+        # Send WebSocket update if possible
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            sanitized_phone = tenant_phone.replace("+", "").replace(" ", "")
+           
+            async_to_sync(channel_layer.group_send)(
+                f"user_notifications_{sanitized_phone}",
+                {
+                    "type": "send_notification",
+                    "content": {
+                        "id": notification.id,
+                        "title": notification.title,
+                        "message": notification.message,
+                        "type": notification.type,
+                        "created_at": notification.created_at.isoformat(),
+                    }
+                }
+            )
+        except Exception as ws_err:
+            print(f"WS Error in send_tenant_notification: {ws_err}")
+ 
+        return Response({"message": "Notification sent successfully", "id": notification.id}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+ 
+ 
+ 
 
 
 
 @api_view(['GET'])
+@jwt_required()
 def get_owner_expenses(request, phone):
     """
     Returns owner expenses from the database.
@@ -3500,6 +3688,7 @@ def get_owner_expenses(request, phone):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+@jwt_required()
 def add_expense(request):
     """
     Creates a new expense record for an owner.
@@ -3522,6 +3711,7 @@ def add_expense(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
+@jwt_required()
 def get_tenant_payment_history(request, phone):
     """
     Returns the complete payment history for a tenant.
@@ -3547,6 +3737,7 @@ def get_tenant_payment_history(request, phone):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 @api_view(['GET'])
+@jwt_required()
 def get_owner_tenants(request, phone):
     """
     Returns all tenants assigned to an owner across all property types.
@@ -3602,6 +3793,7 @@ def get_owner_tenants(request, phone):
 
 
 @api_view(['GET'])
+@jwt_required()
 def get_notifications(request, phone):
     """
     Get all notifications for a user (owner/tenant).
@@ -3634,6 +3826,7 @@ def get_notifications(request, phone):
 
 
 @api_view(['PATCH'])
+@jwt_required()
 def mark_notification_read(request, notification_id):
     """
     Mark a single notification as read.
@@ -3651,6 +3844,7 @@ def mark_notification_read(request, notification_id):
 
 
 @api_view(['PATCH'])
+@jwt_required()
 def mark_all_notifications_read(request, phone):
     """
     Mark all notifications for a user as read.
@@ -3773,68 +3967,53 @@ from rest_framework.response import Response
 
 @api_view(['GET'])
 def check_user(request, phone):
- 
     try:
- 
-        # ✅ CHECK TENANT TABLE
-        user = Tenent.objects.filter(
-            phone=phone
-        ).first()
- 
-        # ✅ USER EXISTS
+        if phone and len(phone) == 10:
+            phone = phone[-10:]  # Ensure only last 10 digits are used for lookup
+        user = Tenent.objects.filter(phone=phone).first()
         if user:
- 
+            token = generate_jwt_token(user_id=user.id, role='tenant', phone=user.phone)
             return Response({
                 "exists": True,
+                "token": token,
                 "user": {
                     "id": user.id,
                     "name": user.name,
                     "phone": user.phone,
                 }
             })
- 
-        # ❌ USER NOT FOUND
         return Response({
             "exists": False,
             "user": None
         })
- 
     except Exception as e:
- 
         return Response({
             "exists": False,
             "error": str(e)
         }, status=500)
 
-        
 @api_view(['GET'])
 def check_owner(request, phone):
-
     try:
-
-        user = Owners.objects.filter(
-            phone=phone
-        ).first()
-
+        if phone and len(phone) == 10:
+            phone = phone[-10:]
+        user = Owners.objects.filter(phone=phone).first()
         if user:
-
+            token = generate_jwt_token(user_id=user.id, role='owner', phone=user.phone)
             return Response({
                 "exists": True,
+                "token": token,
                 "user": {
                     "id": user.id,
                     "name": user.name,
                     "phone": user.phone,
-                    "phone": user.phone,
                 }
             })
-
         return Response({
             "exists": False,
             "user": None
         })
-
     except Exception as e:
-
         return Response({
             "exists": False,
             "error": str(e)

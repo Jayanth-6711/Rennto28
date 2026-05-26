@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from "react";
+import * as Location from "expo-location";
 import {
   View,
   Text,
@@ -10,12 +11,13 @@ import {
   Dimensions,
   SafeAreaView,
   StatusBar,
+  Modal,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import COLORS from "../../theme/colors";
 import { TenantContext } from "@/src/context/TenantContext";
 import { BookingContext } from "@/src/context/BookingContext";
@@ -25,6 +27,15 @@ const { width } = Dimensions.get("window");
 export default function HostelScreen() {
   const navigation = useNavigation();
   const [search, setSearch] = useState("");
+  const [isModalVisible, setModalVisible] = useState(false);
+
+const [selectedHostelType, setSelectedHostelType] = useState("");
+
+const [selectedFacilities, setSelectedFacilities] = useState([]);
+
+const [nearBy, setNearBy] = useState(0);
+const [userCoords, setUserCoords] =
+  useState(null);
   const [properties, setProperties] = useState([]);
   const { tenantEmail } = useContext(TenantContext);
   const { requests = [] } = useContext(BookingContext);
@@ -33,9 +44,37 @@ export default function HostelScreen() {
     fetchHostels();
   }, []);
 
+
+  useEffect(() => {
+  getUserLocation();
+}, []);
+
+const getUserLocation = async () => {
+  try {
+    const { status } =
+      await Location.requestForegroundPermissionsAsync();
+
+    if (status !== "granted") return;
+
+    const location =
+      await Location.getCurrentPositionAsync(
+        {}
+      );
+
+    setUserCoords({
+      latitude:
+        location.coords.latitude,
+      longitude:
+        location.coords.longitude,
+    });
+  } catch (err) {
+    console.log("Location Error:", err);
+  }
+};
+
   const fetchHostels = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/api/owner_props/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_props/`);
       const result = await response.json();
       const MEDIA_URL = `${BASE_URL}/media/`;
 
@@ -60,13 +99,16 @@ export default function HostelScreen() {
 
           return {
             id: String(item.id),
+            hostelType:
+  item.hostelType ||
+  item.hostel_type ||
+  "",
             type: item.type || "Hostel",
             name: item.name || "Unnamed Hostel",
             address: item.address || "No Address",
             image: mainImage || "https://via.placeholder.com/400",
             galleryImages: galleryImages,
-            rating: item.rating || 4.5,
-            reviewCount: 32,
+            
             facilities: item.facilities || [],
             price: item.price || "5,000",
             ownerEmail: item.owner_email,
@@ -83,12 +125,91 @@ export default function HostelScreen() {
       console.log("Fetch Hostels Error:", error);
     }
   };
+  const getDistance = (
+  lat1,
+  lon1,
+  lat2,
+  lon2
+) => {
+  const toRad = (value) =>
+    (value * Math.PI) / 180;
 
-  const filteredHostels = properties.filter((h) =>
-    h.name.toLowerCase().includes(search.toLowerCase()) ||
-    h.address.toLowerCase().includes(search.toLowerCase())
+  const R = 6371;
+
+  const dLat = toRad(lat2 - lat1);
+
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) *
+      Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c =
+    2 * Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1 - a)
+    );
+
+  return R * c;
+};
+
+const filteredHostels = properties.filter((h) => {
+  const matchesNearBy =
+  nearBy === 0 ||
+  (
+    userCoords &&
+    h.latitude != null &&
+h.longitude != null &&
+    getDistance(
+      userCoords.latitude,
+      userCoords.longitude,
+      h.latitude,
+      h.longitude
+    ) <= nearBy
   );
 
+const searchText = search
+  .trim()
+  .toLowerCase();
+
+const searchableText = `
+  ${h.name || ""}
+  ${h.address || ""}
+  ${h.hostelType || ""}
+  ${(h.facilities || []).join(" ")}
+`
+  .toLowerCase()
+  .replace(/,/g, " ")
+  .replace(/\s+/g, " ");
+
+const matchesSearch =
+  searchText === "" ||
+  
+  searchableText.includes(searchText);
+
+  const matchesHostelType =
+    selectedHostelType === "" ||
+    (h.hostelType || "")
+      .toLowerCase() ===
+    selectedHostelType.toLowerCase();
+
+  const matchesFacilities =
+    selectedFacilities.length === 0 ||
+    selectedFacilities.every((f) =>
+      h.facilities?.includes(f)
+    );
+
+  return (
+    matchesSearch &&
+    matchesHostelType &&
+    matchesFacilities &&
+matchesNearBy
+  );
+});
   const shortenAddress = (address) => {
     if (!address) return "No Address";
     const parts = address.split(',').map(s => s.trim());
@@ -136,7 +257,10 @@ export default function HostelScreen() {
               value={search}
               onChangeText={setSearch}
             />
-            <TouchableOpacity style={styles.filterBtn}>
+            <TouchableOpacity
+  style={styles.filterBtn}
+  onPress={() => setModalVisible(true)}
+>
               <Ionicons name="options-outline" size={20} color={COLORS.PRIMARY} />
               <Text style={styles.filterText}>Filters</Text>
             </TouchableOpacity>
@@ -157,10 +281,7 @@ export default function HostelScreen() {
                 <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.cardAddress} numberOfLines={1}>{shortenAddress(item.address)}</Text>
 
-                <View style={styles.ratingRow}>
-                  <Ionicons name="star" size={14} color="#FFD700" />
-                  <Text style={styles.ratingText}>{item.rating} ({item.reviewCount})</Text>
-                </View>
+                
 
                 <View style={styles.tagRow}>
                   {item.facilities.slice(0, 3).map((fac, idx) => (
@@ -186,6 +307,182 @@ export default function HostelScreen() {
           )}
         </View>
       </ScrollView>
+      <Modal
+  visible={isModalVisible}
+  animationType="slide"
+  transparent
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContent}>
+
+      {/* HEADER */}
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle}>
+          Hostel Filters
+        </Text>
+
+        <TouchableOpacity
+          onPress={() => setModalVisible(false)}
+        >
+          <Ionicons
+            name="close"
+            size={28}
+            color="#333"
+          />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+      >
+
+        {/* HOSTEL TYPE */}
+        <Text style={styles.filterLabel}>
+  Near Me
+</Text>
+
+<View style={styles.filterRow}>
+  {[0, 5, 10, 20].map((km) => (
+    <TouchableOpacity
+      key={km}
+      style={[
+        styles.chip,
+        nearBy === km &&
+          styles.activeChip,
+      ]}
+      onPress={() =>
+        setNearBy(km)
+      }
+    >
+      <Text
+        style={[
+          styles.chipText,
+          nearBy === km &&
+            styles.activeChipText,
+        ]}
+      >
+        {km === 0
+          ? "All"
+          : `${km} KM`}
+      </Text>
+    </TouchableOpacity>
+  ))}
+</View>
+        <Text style={styles.filterLabel}>
+          Hostel Type
+        </Text>
+
+        <View style={styles.filterRow}>
+          {[
+            "Boys",
+            "Girls",
+            "Coliving",
+          ].map((t) => (
+            <TouchableOpacity
+              key={t}
+              style={[
+                styles.chip,
+                selectedHostelType === t &&
+                  styles.activeChip,
+              ]}
+              onPress={() =>
+                setSelectedHostelType(
+                  selectedHostelType === t
+                    ? ""
+                    : t
+                )
+              }
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  selectedHostelType === t &&
+                    styles.activeChipText,
+                ]}
+              >
+                {t}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* FACILITIES */}
+        <Text style={styles.filterLabel}>
+          Facilities
+        </Text>
+
+        <View style={styles.filterRow}>
+          {[
+            "WiFi",
+            "Food",
+            "AC",
+            "Laundry",
+            "Parking",
+            "Security",
+          ].map((f) => (
+            <TouchableOpacity
+              key={f}
+              style={[
+                styles.chip,
+                selectedFacilities.includes(f) &&
+                  styles.activeChip,
+              ]}
+              onPress={() =>
+                setSelectedFacilities((prev) =>
+                  prev.includes(f)
+                    ? prev.filter(
+                        (x) => x !== f
+                      )
+                    : [...prev, f]
+                )
+              }
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  selectedFacilities.includes(f) &&
+                    styles.activeChipText,
+                ]}
+              >
+                {f}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* ACTION BUTTONS */}
+        <View style={styles.actionRow}>
+
+          <TouchableOpacity
+            style={styles.resetBtn}
+            onPress={() => {
+              setSelectedHostelType("");
+              setSelectedFacilities([]);
+              setNearBy(0);
+            }}
+          >
+            <Text style={styles.resetText}>
+              Reset
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.applyBtn}
+            onPress={() =>
+              setModalVisible(false)
+            }
+          >
+            <Text style={styles.applyText}>
+              Apply Filters
+            </Text>
+          </TouchableOpacity>
+
+        </View>
+
+      </ScrollView>
+    </View>
+  </View>
+</Modal>
     </SafeAreaView>
   );
 }
@@ -315,17 +612,7 @@ const styles = StyleSheet.create({
     color: "#777",
     marginTop: 2,
   },
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 5,
-  },
-  ratingText: {
-    fontSize: 12,
-    color: "#555",
-    marginLeft: 4,
-    fontWeight: "600",
-  },
+
   tagRow: {
     flexDirection: "row",
     marginTop: 8,
@@ -367,4 +654,107 @@ const styles = StyleSheet.create({
     color: "#777",
     marginLeft: 2,
   },
+  modalOverlay: {
+  flex: 1,
+  backgroundColor: "rgba(0,0,0,0.4)",
+  justifyContent: "flex-end",
+},
+
+modalContent: {
+  backgroundColor: "#fff",
+  borderTopLeftRadius: 28,
+  borderTopRightRadius: 28,
+  padding: 20,
+  maxHeight: "78%",
+},
+
+modalHeader: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 20,
+},
+
+modalTitle: {
+  fontSize: 20,
+  fontWeight: "800",
+  color: "#111",
+},
+
+filterLabel: {
+  fontSize: 15,
+  fontWeight: "700",
+  marginBottom: 12,
+  marginTop: 10,
+},
+
+filterRow: {
+  flexDirection: "row",
+  flexWrap: "wrap",
+  marginBottom: 10,
+},
+
+chip: {
+  paddingHorizontal: 16,
+  paddingVertical: 11,
+
+  borderRadius: 22,
+
+  backgroundColor: "#fafafa",
+
+  marginRight: 10,
+  marginBottom: 10,
+
+  borderWidth: 1,
+  borderColor: "#ececec",
+},
+
+activeChip: {
+  backgroundColor: "#7c3aed15",
+  borderColor: "#7c3aed",
+},
+
+chipText: {
+  color: "#555",
+  fontWeight: "600",
+},
+
+activeChipText: {
+  color: "#7c3aed",
+  fontWeight: "700",
+},
+
+actionRow: {
+  flexDirection: "row",
+  marginTop: 30,
+  gap: 10,
+},
+
+resetBtn: {
+  flex: 1,
+  height: 50,
+  borderRadius: 14,
+  backgroundColor: "#f3f4f6",
+  justifyContent: "center",
+  alignItems: "center",
+},
+
+applyBtn: {
+  flex: 2,
+  height: 50,
+  borderRadius: 14,
+  backgroundColor: "#7c3aed",
+  justifyContent: "center",
+  alignItems: "center",
+},
+
+resetText: {
+  fontWeight: "700",
+  color: "#444",
+},
+
+applyText: {
+  fontWeight: "700",
+  color: "#fff",
+},
 });

@@ -13,7 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import COLORS from "../../theme/colors";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 
@@ -37,7 +37,7 @@ export default function OwnerEditProfileScreen({ navigation }) {
     try {
       const phone = await AsyncStorage.getItem("ownerPhone");
       if (!phone) return;
-      const response = await fetch(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone.trim())}/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone.trim())}/`);
       const data = await response.json();
       if (response.ok) {
         setOwnerData({
@@ -117,7 +117,7 @@ export default function OwnerEditProfileScreen({ navigation }) {
         type: type,
       });
 
-      const response = await fetch(`${BASE_URL}/api/owner_profile_update/${encodeURIComponent(phone.trim())}/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_profile_update/${encodeURIComponent(phone.trim())}/`, {
         method: "PUT",
         body: formData,
       });
@@ -139,7 +139,7 @@ export default function OwnerEditProfileScreen({ navigation }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch(`${BASE_URL}/api/owner_profile_update/${encodeURIComponent(ownerData.phone)}/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_profile_update/${encodeURIComponent(ownerData.phone)}/`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

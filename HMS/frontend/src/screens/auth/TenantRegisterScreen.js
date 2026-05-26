@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLanguage } from "../../utils/LanguageContext";
 import {
@@ -91,7 +91,7 @@ export default function TenantRegisterScreen({ navigation }) {
 
       setLoadingOTP(true);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `https://2factor.in/API/V1/${apiKey}/SMS/${phone}/AUTOGEN3/OTP1`
       );
 
@@ -148,7 +148,7 @@ export default function TenantRegisterScreen({ navigation }) {
 
       setLoadingVerify(true);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${sessionId}/${otp}`
       );
 
@@ -167,7 +167,7 @@ export default function TenantRegisterScreen({ navigation }) {
 
       setIsPhoneVerified(true);
 
-      const checkResponse = await fetch(
+      const checkResponse = await fetchWithAuth(
         `${BASE_URL}/api/check-user/${phone}/`
       );
 
@@ -178,6 +178,9 @@ export default function TenantRegisterScreen({ navigation }) {
 
         // Save tenant phone number
         await AsyncStorage.setItem("tenantPhone", phone);
+        if (userData.token) {
+          await AsyncStorage.setItem("userToken", userData.token);
+        }
 
         // Save tenant email for future API calls
         if (userData.email) {
@@ -250,7 +253,7 @@ export default function TenantRegisterScreen({ navigation }) {
       formData.append("name", name);
       formData.append("phone", phone);
 
-      const response = await fetch(`${BASE_URL}/api/tenent/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/tenent/`, {
         method: "POST",
         body: formData,
       });
@@ -269,6 +272,11 @@ export default function TenantRegisterScreen({ navigation }) {
 
         // SAVE PHONE
         await AsyncStorage.setItem("tenantPhone", phone);
+        
+        // SAVE TOKEN
+        if (data.token) {
+          await AsyncStorage.setItem("userToken", data.token);
+        }
 
         // SAVE TENANT ID
         await AsyncStorage.setItem(

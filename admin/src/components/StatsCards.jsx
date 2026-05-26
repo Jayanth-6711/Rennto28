@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNotifications } from "../context/NotificationContext";
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 import {
     FaUsers,
     FaUserFriends,
@@ -28,7 +28,7 @@ function StatsCards({ onCardClick }) {
 
     const fetchStats = async () => {
         try {
-            const response = await fetch(`${BASE_URL}/api/admin_home/`);
+            const response = await fetchWithAuth(`${BASE_URL}/api/admin_home/`);
             const result = await response.json();
 
             if (response.ok && result?.data) {

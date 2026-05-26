@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import OwnerDetailsModal from "../components/OwnerDetailsModal";
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 
 function Properties({ onLogout }) {
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,7 @@ function Properties({ onLogout }) {
       setLoading(true);
       setError("");
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/get_all_property_basic_details/`
       );
 

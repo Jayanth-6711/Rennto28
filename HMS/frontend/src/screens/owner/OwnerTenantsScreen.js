@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, SafeAreaView, StatusBar, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BASE_URL from '../../config/Api';
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
 
 export default function OwnerTenantsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -19,9 +19,9 @@ export default function OwnerTenantsScreen({ navigation }) {
 
       // Fetch from all possible tenant types
       const [hostelRes, aptRes, commRes] = await Promise.all([
-        fetch(`${BASE_URL}/api/getbeds/${encodeURIComponent(phone)}/`),
-        fetch(`${BASE_URL}/api/getapartmentbeds/${encodeURIComponent(phone)}/`),
-        fetch(`${BASE_URL}/api/getcommercialbeds/${encodeURIComponent(phone)}/`)
+        fetchWithAuth(`${BASE_URL}/api/getbeds/${encodeURIComponent(phone)}/`),
+        fetchWithAuth(`${BASE_URL}/api/getapartmentbeds/${encodeURIComponent(phone)}/`),
+        fetchWithAuth(`${BASE_URL}/api/getcommercialbeds/${encodeURIComponent(phone)}/`)
       ]);
 
       const [hostelData, aptData, commData] = await Promise.all([

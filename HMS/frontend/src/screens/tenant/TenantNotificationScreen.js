@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { BookingContext } from "@/src/context/BookingContext";
 import { TenantContext } from "@/src/context/TenantContext";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import COLORS from "../../theme/colors";
 const TenantNotificationScreen = () => {
   const navigation = useNavigation();
@@ -37,7 +37,7 @@ const TenantNotificationScreen = () => {
             style: "destructive",
             onPress: async () => {
               try {
-                const res = await fetch(`${BASE_URL}/api/withdraw_request/`, {
+                const res = await fetchWithAuth(`${BASE_URL}/api/withdraw_request/`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -76,7 +76,7 @@ const TenantNotificationScreen = () => {
     setRefreshing(true);
 
     try {
-      const res = await fetch(
+      const res = await fetchWithAuth(
         `${BASE_URL}/api/tenant_notifications/${encodeURIComponent(tenantPhone)}/`
       );
 

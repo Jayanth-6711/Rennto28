@@ -1,4 +1,4 @@
-  import BASE_URL from "@/src/config/Api";
+  import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
   import COLORS from "@/src/theme/colors";
   import { FontAwesome, Ionicons, MaterialIcons } from "@expo/vector-icons";
   import { Picker } from "@react-native-picker/picker";
@@ -8,6 +8,7 @@
   // import { useRouter } from "expo-router";
   import { useNavigation } from "@react-navigation/native";
   import { StatusBar } from "expo-status-bar";
+  import AsyncStorage from "@react-native-async-storage/async-storage";
   import React, { useCallback, useEffect, useRef, useState } from "react";
   import {
     Alert,
@@ -236,7 +237,7 @@ export default function OwnerCommercialSection({
           const timeoutMs = 6000;
           if (Platform.OS === "android") {
             const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=${encodeURIComponent(input)}`;
-            const fetchPromise = fetch(url, {
+            const fetchPromise = fetchWithAuth(url, {
               headers: { Accept: "application/json" },
             }).then((r) => r.json());
             const timeoutPromise = new Promise((_, reject) =>
@@ -753,12 +754,16 @@ if (step === 1) {
                 });
               }
 
-              const response = await fetch(`${BASE_URL}/api/owner/`, {
+              const response = await fetchWithAuth(`${BASE_URL}/api/owner/`, {
                 method: "POST",
                 body: formData,
               });
 
               if (response.ok) {
+                const data = await response.json();
+                if (data.token) {
+                  await AsyncStorage.setItem("userToken", data.token);
+                }
                 Alert.alert(t("success"), t("registration_successful"), [
                   { text: t("ok") || "OK", onPress: () =>
   navigation.replace(

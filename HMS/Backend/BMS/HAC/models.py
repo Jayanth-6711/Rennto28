@@ -38,6 +38,7 @@ class Owners(models.Model):
      # ✅ ADD THIS LINE
     created_at = models.DateTimeField(default=timezone.now)
     suspension_reason = models.TextField(blank=True, null=True)
+    push_token = models.CharField(max_length=255, blank=True, null=True)
  
     def __str__(self):
         return self.name
@@ -242,6 +243,7 @@ class Tenent(models.Model):
     owner = models.ForeignKey(Owners, on_delete=models.SET_NULL, null=True, blank=True)
     name = models.CharField(max_length=100)
     phone = models.CharField(max_length=15)
+    push_token = models.CharField(max_length=255, blank=True, null=True)
  
  
     def __str__(self):
@@ -258,7 +260,6 @@ class TenantBeds(models.Model):
     rent = models.DecimalField(max_digits=10, decimal_places=2)
     checkIn = models.DateField()
     checkOut = models.DateField(null=True, blank=True)
-    idUri = models.ImageField(upload_to='identity_proofs/', null=True, blank=True)
     payment_screenshot = models.ImageField(
     upload_to='payment_screenshots/',
     null=True,
@@ -279,7 +280,6 @@ class ApartmentTenantBeds(models.Model):
     rent = models.DecimalField(max_digits=10, decimal_places=2)
     checkIn = models.DateField()
     checkOut = models.DateField(null=True, blank=True)
-    idUri = models.ImageField(upload_to='identity_proofs/', null=True, blank=True)
     payment_screenshot = models.ImageField(
         upload_to='payment_screenshots/',
         null=True,
@@ -299,7 +299,6 @@ class CommercialTenantBeds(models.Model):
     rent = models.DecimalField(max_digits=10, decimal_places=2)
     checkIn = models.DateField()
     checkOut = models.DateField(null=True, blank=True)
-    idUri = models.ImageField(upload_to='identity_proofs/', null=True, blank=True)
     payment_screenshot = models.ImageField(
         upload_to='payment_screenshots/',
         null=True,
@@ -445,6 +444,7 @@ class BankDetails(models.Model):
     ifsc = models.CharField(max_length=20, null=True, blank=True)
     accountNo = models.CharField(max_length=30, null=True, blank=True)
     upi_id = models.CharField(max_length=150, null=True, blank=True)
+    qr_code = models.ImageField(upload_to='bank_qr_codes/', null=True, blank=True)
  
     def __str__(self):
         return f"{self.bankName} - {self.accountNo}"

@@ -10,7 +10,7 @@ import {
   Platform,
   StatusBar,
 } from "react-native";
-import BASE_URL, { WS_BASE_URL } from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth, WS_BASE_URL } from "@/src/config/Api";
 import { useLanguage } from "../../utils/LanguageContext";
 
 export default function WaitingScreen({ navigation, route }) {
@@ -69,7 +69,7 @@ export default function WaitingScreen({ navigation, route }) {
   const fetchSuspensionReason = async () => {
     try {
       if (!isMounted.current || !phone) return;
-      const res = await fetch(`${BASE_URL}/api/get_suspension_reason/${encodeURIComponent(phone)}/`);
+      const res = await fetchWithAuth(`${BASE_URL}/api/get_suspension_reason/${encodeURIComponent(phone)}/`);
       const data = res.ok ? await res.json() : {};
       if (isMounted.current) setReason(data.reason || "");
     } catch (err) {
@@ -81,7 +81,7 @@ export default function WaitingScreen({ navigation, route }) {
     try {
       if (!isMounted.current || !phone) return;
 
-      const res = await fetch(`${BASE_URL}/api/check-owner-status/${encodeURIComponent(phone)}/`);
+      const res = await fetchWithAuth(`${BASE_URL}/api/check-owner-status/${encodeURIComponent(phone)}/`);
       const data = res.ok ? await res.json() : {};
 
       if (!isMounted.current) return;
@@ -225,7 +225,7 @@ export default function WaitingScreen({ navigation, route }) {
   const handleReRegister = async () => {
     try {
       if (!isMounted.current) return;
-      const res = await fetch(`${BASE_URL}/api/get_suspension_reason/${encodeURIComponent(phone)}/`, {
+      const res = await fetchWithAuth(`${BASE_URL}/api/get_suspension_reason/${encodeURIComponent(phone)}/`, {
         method: "DELETE",
       });
       if (res.ok) {

@@ -5,7 +5,7 @@ import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import OwnerDetailsModal from "../components/OwnerDetailsModal";
 import { useNotifications } from "../context/NotificationContext";
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 
 function Owners() {
   const [owners, setOwners] = useState([]);
@@ -92,7 +92,7 @@ function Owners() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(`${BASE_URL}/api/owner-admin/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner-admin/`);
       const result = await response.json();
 
       if (response.ok && result?.data) {
@@ -125,7 +125,7 @@ function Owners() {
     const cleanEmail = phone.trim().toLowerCase();
 
     try {
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/owner-status/${encodeURIComponent(cleanEmail)}/`,
         {
           method: "PATCH",
@@ -164,7 +164,7 @@ function Owners() {
 
   const saveSuspendReason = async (phone, reason) => {
     try {
-      const response = await fetch(`${BASE_URL}/api/suspension_reason/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/suspension_reason/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -192,7 +192,7 @@ function Owners() {
 
   const fetchSuspensionReason = async (phone) => {
     try {
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/get_suspension_reason/${encodeURIComponent(phone)}/`
       );
 

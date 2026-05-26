@@ -6,7 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useLanguage } from "../../utils/LanguageContext";
 import * as ImagePicker from "expo-image-picker";
 import COLORS from "../../theme/colors";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import {
   Alert,
   Image,
@@ -62,7 +62,7 @@ export default function TenantProfile({ navigation }) {
 
       if (!phone) return;
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/tenantdetails/${encodeURIComponent(phone.trim())}/`
       );
 
@@ -118,7 +118,7 @@ export default function TenantProfile({ navigation }) {
     try {
       const phone = await AsyncStorage.getItem("tenantPhone");
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/tenant_profile_update/${encodeURIComponent(phone.trim())}/`,
         {
           method: "PUT",

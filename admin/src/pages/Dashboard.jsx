@@ -5,7 +5,7 @@ import StatsCards from "../components/StatsCards";
 import ActivityTable from "../components/ActivityTable";
 import ChartsSection from "../components/ChartsSection";
 import Header from "../components/Header";
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 
 function Dashboard({ onLogout }) {
     const navigate = useNavigate();
@@ -20,7 +20,7 @@ function Dashboard({ onLogout }) {
         setLoading(true);
         try {
             const endpoint = type === "Total Tenants" ? "admin_tenants" : "admin_properties";
-            const response = await fetch(`${BASE_URL}/api/${endpoint}/`);
+            const response = await fetchWithAuth(`${BASE_URL}/api/${endpoint}/`);
             const result = await response.json();
             if (response.ok && result.data) {
                 if (type === "Total Tenants") setTenants(result.data);

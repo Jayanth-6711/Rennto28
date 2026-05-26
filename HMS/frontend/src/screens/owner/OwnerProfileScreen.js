@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
@@ -28,6 +28,12 @@ export default function OwnerProfile({ navigation }) {
   const [showAllExpenses, setShowAllExpenses] = useState(false);
   const [payments, setPayments] = useState([]);
   const [expenses, setExpenses] = useState([]);
+
+  const totalCollected = (Array.isArray(payments) ? payments : []).filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + Number(p.amount), 0);
+  const totalIncome = totalCollected;
+  const totalExpenses = (Array.isArray(expenses) ? expenses : []).reduce((sum, item) => sum + Number(item.amount), 0);
+  const netProfit = totalIncome - totalExpenses;
+
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showLangModal, setShowLangModal] = useState(false);
 
@@ -78,6 +84,10 @@ export default function OwnerProfile({ navigation }) {
 
   React.useEffect(() => {
     if (!loading) {
+      if (netProfit <= 0 || totalIncome <= 0) {
+        setCoords(null);
+        return;
+      }
       const timer = setTimeout(() => {
         if (avatarRef.current && incomeRef.current && expensesRef.current && profitRef.current) {
           const getPos = (ref) => new Promise(resolve => {
@@ -101,7 +111,7 @@ export default function OwnerProfile({ navigation }) {
       }, 600);
       return () => clearTimeout(timer);
     }
-  }, [loading]);
+  }, [loading, netProfit, totalIncome]);
 
   React.useEffect(() => {
     if (coords && !animationFinished) {
@@ -279,6 +289,8 @@ export default function OwnerProfile({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
+      setAnimationFinished(false);
+      setCoords(null);
       fetchOwnerProfile();
       fetchPayments();
       fetchExpenses();
@@ -287,6 +299,8 @@ export default function OwnerProfile({ navigation }) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setAnimationFinished(false);
+    setCoords(null);
     await Promise.all([fetchOwnerProfile(), fetchPayments(), fetchExpenses()]);
     setRefreshing(false);
   }, []);
@@ -296,7 +310,7 @@ export default function OwnerProfile({ navigation }) {
       const rawEmail = await AsyncStorage.getItem("ownerPhone");
       if (!rawEmail) return;
       const phone = rawEmail.trim();
-      const response = await fetch(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone)}/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_data/${encodeURIComponent(phone)}/`);
       const data = await response.json();
       if (response.ok) {
         setEditableOwner({
@@ -329,7 +343,7 @@ export default function OwnerProfile({ navigation }) {
       const rawEmail = await AsyncStorage.getItem("ownerPhone");
       if (!rawEmail) return;
       const phone = rawEmail.trim();
-      const response = await fetch(`${BASE_URL}/api/owner-payments/${encodeURIComponent(phone)}/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner-payments/${encodeURIComponent(phone)}/`);
       const data = await response.json();
       if (response.ok) {
         setPayments(Array.isArray(data) ? data : (data.data || []));
@@ -345,7 +359,7 @@ export default function OwnerProfile({ navigation }) {
       const rawEmail = await AsyncStorage.getItem("ownerPhone");
       if (!rawEmail) return;
       const phone = rawEmail.trim();
-      const response = await fetch(`${BASE_URL}/api/owner-expenses/${encodeURIComponent(phone)}/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner-expenses/${encodeURIComponent(phone)}/`);
       const data = await response.json();
       if (response.ok) {
         setExpenses(data.expenses || []);
@@ -397,7 +411,7 @@ export default function OwnerProfile({ navigation }) {
         type: type,
       });
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/owner_profile_update/${encodeURIComponent(phone)}/`,
         {
           method: "PUT",
@@ -431,10 +445,7 @@ export default function OwnerProfile({ navigation }) {
     return num.toLocaleString();
   };
 
-  const totalCollected = (Array.isArray(payments) ? payments : []).filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + Number(p.amount), 0);
-  const totalIncome = totalCollected;
-  const totalExpenses = (Array.isArray(expenses) ? expenses : []).reduce((sum, item) => sum + Number(item.amount), 0);
-  const netProfit = totalIncome - totalExpenses;
+
 
   if (loading) {
     return (

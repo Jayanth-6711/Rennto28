@@ -28,6 +28,11 @@ urlpatterns = [
         views.delete_hostel_tenant,
         name='delete_hostel_tenant'
     ),
+    path(
+        'check_request_status/<str:tenant_phone>/<str:owner_phone>/<str:property_name>/',
+        views.check_request_status,
+        name='check_request_status'
+    ),
 
     # =========================
     # DELETE APARTMENT TENANT
@@ -89,7 +94,7 @@ urlpatterns = [
 
     path('create-issue/', views.create_issue),
     path('owner-issues/<str:phone>/', views.owner_issues),
-     path('tenant-issues/<int:id>/', views.tenant_issues),
+    path('tenant-issues/<str:identifier>/', views.tenant_issues),
     path('update-issue-status/<int:issue_id>/', views.update_issue_status),
     path('update-issue-comment/<int:issue_id>/', views.update_issue_comment),
     path('test-create-issue/', views.test_create_issue),
@@ -143,6 +148,8 @@ urlpatterns = [
     views.check_owner,
     name='check_owner'
 ),
+    path('admin-login/', views.admin_login, name='admin_login'),
+    path('save-push-token/', views.save_push_token, name='save_push_token'),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

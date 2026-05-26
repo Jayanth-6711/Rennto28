@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 
 
 function OwnerDetailsModal({ phone, onClose }) {
@@ -19,7 +19,7 @@ function OwnerDetailsModal({ phone, onClose }) {
         setError("");
         setOwnerDetails(null);
 
-        const response = await fetch(
+        const response = await fetchWithAuth(
           `${BASE_URL}/api/owner_data/${phone}/`
         );
         const result = await response.json();

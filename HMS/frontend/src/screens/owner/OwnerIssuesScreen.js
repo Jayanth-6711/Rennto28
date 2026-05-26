@@ -1,7 +1,9 @@
 import COLORS from "@/src/theme/colors";
 import { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import BASE_URL from "@/src/config/Api";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
 import { useLanguage } from "../../utils/LanguageContext";
 
 import {
@@ -39,6 +41,7 @@ const initialIssues = [];
 
 export default function OwnerIssues() {
   const { t } = useLanguage();
+  const navigation = useNavigation();
   const [search, setSearch] = useState("");
   const [issues, setIssues] = useState([]);
   const [selectedIssue, setSelectedIssue] = useState(null);
@@ -47,15 +50,19 @@ export default function OwnerIssues() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [viewerVisible, setViewerVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const fetchOwnerIssues = async () => {
     try {
-      const ownerPhone = await AsyncStorage.getItem("ownerPhone")
-      const response = await fetch(`${BASE_URL}/api/owner-issues/${encodeURIComponent(ownerPhone)}/`);
+      setLoading(true);
+      const ownerPhone = await AsyncStorage.getItem("ownerPhone");
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner-issues/${encodeURIComponent(ownerPhone)}/`);
       const data = await response.json();
-      setIssues(data);
+      setIssues(Array.isArray(data) ? data : []);
     } catch (error) {
       console.log("Owner Fetch Error:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -197,7 +204,7 @@ export default function OwnerIssues() {
   const updateStatus = async (status) => {
     if (!selectedIssue) return;
     try {
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/update-issue-status/${selectedIssue.id}/`,
         {
           method: "PATCH",
@@ -228,7 +235,7 @@ export default function OwnerIssues() {
       console.log("ID:", selectedIssue?.id);
       console.log("COMMENT:", ownerComment);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/update-issue-comment/${selectedIssue.id}/`,
         {
           method: "PATCH",
@@ -275,7 +282,17 @@ export default function OwnerIssues() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.pageTitle}>{t('issues')}</Text>
+      <View style={styles.header}>
+        <View style={styles.headerLeftContainer}>
+          <TouchableOpacity 
+            onPress={() => navigation.goBack()} 
+            style={styles.backButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.TEXT_PRIMARY} />
+          </TouchableOpacity>
+          <Text style={styles.pageTitle}>{t('Issues')}</Text>
+        </View>
+      </View>
 
       <View style={styles.summaryRow}>
         {["All", "Pending", "In Progress", "Completed"].map((status) => {
@@ -288,8 +305,8 @@ export default function OwnerIssues() {
               : issues.filter((i) => i.status === status).length;
 
           const label = status === "All" ? t('all') : 
-                        status === "Pending" ? t('pending_count') : 
-                        status === "In Progress" ? t('in_progress') : 
+                        status === "Pending" ? t('pending ') : 
+                        status === "In Progress" ? t('progress') : 
                         t('completed');
 
           return (
@@ -309,10 +326,10 @@ export default function OwnerIssues() {
         })}
       </View>
 
-      <Text style={styles.sectionHeader}>{t('history')}</Text>
+      <Text style={styles.sectionHeader}>{t('History')}</Text>
 
       <TextInput
-        placeholder={t('search_by_name')}
+        placeholder={t('search by name')}
         style={styles.search}
         value={search}
         onChangeText={setSearch}
@@ -321,12 +338,13 @@ export default function OwnerIssues() {
       <FlatList
         data={filteredIssues}
         keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
         renderItem={({ item }) => (
           <TouchableOpacity onPress={() => openDetails(item)}>
             <View style={styles.card}>
               <Text style={styles.title}>{item.title}</Text>
               <Text style={styles.sub}>
-                {item.tenant_name} • {item.tenant_email}
+                {item.tenant_name} • {item.tenant_phone}
               </Text>
 
               <View style={styles.rowBetween}>
@@ -342,32 +360,63 @@ export default function OwnerIssues() {
 
       <Modal visible={modalVisible} animationType="slide">
         {selectedIssue && (
-          <ScrollView style={styles.modal}>
-            <Text style={styles.modalTitle}>{selectedIssue.title}</Text>
+          <View style={{ flex: 1, backgroundColor: COLORS.BACKGROUND }}>
+            <View style={styles.modalHeaderClose}>
+              <Text style={styles.modalTitleHeader}>{t('issue details') || 'Issue Details'}</Text>
+              <TouchableOpacity 
+                onPress={() => setModalVisible(false)}
+                style={styles.closeModalBtn}
+              >
+                <Ionicons name="close-circle" size={32} color={COLORS.TEXT_SECONDARY} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modal}>
+              <Text style={styles.modalTitle}>{selectedIssue.title}</Text>
 
             <View style={styles.detailCard}>
-              <Detail label={t('tenant')} value={selectedIssue.tenant_name} />
-              <Detail label={t('email_placeholder')} value={selectedIssue.tenant_email} />
-              <Detail label={t('phone_number')} value={selectedIssue.tenant_phone} />
-              <Detail label={t('due_date')} value={new Date(selectedIssue.date).toLocaleString()} />
+                <Detail label={t('tenant')} value={selectedIssue.tenant_name} />
+                <Detail label={t('phone_number')} value={selectedIssue.tenant_phone} />
+                <Detail label={t('due date')} value={new Date(selectedIssue.date).toLocaleString()} />
               <Detail label="Severity" value={selectedIssue.severity} />
               <Detail label={t('status')} value={selectedIssue.status} />
             </View>
 
             <View style={styles.descCard}>
-              <Text style={styles.descTitle}>{t('description')}</Text>
+              <Text style={styles.descTitle}>{t('Description')}</Text>
               <Text style={styles.descText}>{selectedIssue.description}</Text>
             </View>
 
+            {selectedIssue.image && (
+              <View style={styles.detailCard}>
+                <Text style={styles.updateTitle}>Attachment</Text>
+                <TouchableOpacity 
+                  onPress={() => {
+                    setSelectedImage(selectedIssue.image.startsWith('http') ? selectedIssue.image : `${BASE_URL}${selectedIssue.image}`);
+                    setViewerVisible(true);
+                  }}
+                  style={{ position: 'relative' }}
+                >
+                  <Image 
+                    source={{ uri: selectedIssue.image.startsWith('http') ? selectedIssue.image : `${BASE_URL}${selectedIssue.image}` }} 
+                    style={{ width: '100%', height: 200, borderRadius: 12 }}
+                    resizeMode="cover"
+                  />
+                  <View style={{ position: 'absolute', right: 10, bottom: 10, backgroundColor: 'rgba(0,0,0,0.5)', padding: 4, borderRadius: 10 }}>
+                    <Ionicons name="expand" size={20} color="#FFF" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.detailCard}>
-              <Text style={styles.updateTitle}>{t('update_status')}</Text>
+              <Text style={styles.updateTitle}>{t('Update Status')}</Text>
               <View style={styles.statusRow}>
                 {["Pending", "In Progress", "Completed"].map((status) => {
                   const isSelected = selectedIssue.status === status;
                   const color = STATUS_COLORS[status];
 
-                  const label = status === "Pending" ? t('pending_count') : 
-                                status === "In Progress" ? t('in_progress') : 
+                  const label = status === "Pending" ? t('pending count') : 
+                                status === "In Progress" ? t('in progress') : 
                                 t('completed');
 
                   return (
@@ -417,6 +466,7 @@ export default function OwnerIssues() {
               </TouchableOpacity>
             </View>
           </ScrollView>
+          </View>
         )}
       </Modal>
       {/* FULL IMAGE VIEWER MODAL */}
@@ -542,15 +592,42 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.BACKGROUND,
-    padding: 16,
+  },
+
+  header: {
+    backgroundColor: COLORS.WHITE,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
+    marginBottom: 16,
+  },
+
+  headerLeftContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  backButton: {
+    marginRight: 12,
+    padding: 4,
+  },
+
+  refreshBtn: {
+    padding: 8,
+    backgroundColor: COLORS.BLUE_LIGHT,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   pageTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "800",
-    color: "#08070aff",
-    marginBottom: 16,
-    marginTop: 0,
+    color: COLORS.TEXT_PRIMARY,
   },
 
   sectionHeader: {
@@ -558,6 +635,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginVertical: 12,
     color: COLORS.TEXT_PRIMARY,
+    paddingHorizontal: 16,
   },
 
   search: {
@@ -567,6 +645,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: COLORS.BORDER,
+    marginHorizontal: 16,
   },
 
   card: {
@@ -624,6 +703,27 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginBottom: 18,
     color: COLORS.TEXT_PRIMARY,
+  },
+
+  modalHeaderClose: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: COLORS.WHITE,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
+  },
+
+  modalTitleHeader: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.TEXT_PRIMARY,
+  },
+
+  closeModalBtn: {
+    padding: 2,
   },
 
   detailCard: {
@@ -737,6 +837,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 20,
+    paddingHorizontal: 12,
   },
 
   summaryCard: {
@@ -794,4 +895,3 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
-

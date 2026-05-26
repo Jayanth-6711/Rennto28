@@ -52,7 +52,8 @@ class BankSerializer(serializers.ModelSerializer):
             'bankName',
             'ifsc',
             'accountNo',
-            'upiId',   # 👈 keep frontend name
+            'upiId',
+            'qr_code'   # 👈 keep frontend name
         ]
 
 # ----------------------------
@@ -217,9 +218,6 @@ class TenantBedSerializer(serializers.ModelSerializer):
             'checkOut': {
                 'required': False,
                 'allow_null': True
-            },
-            'idUri': {
-                'required': False
             }
         }
 

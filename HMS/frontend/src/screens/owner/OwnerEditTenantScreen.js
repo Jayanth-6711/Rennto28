@@ -15,7 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import COLORS from "../../theme/colors";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import { BookingContext } from "@/src/context/BookingContext";
 
 export default function OwnerEditTenantScreen({ route, navigation }) {
@@ -27,7 +27,7 @@ export default function OwnerEditTenantScreen({ route, navigation }) {
   // Form states
   const [name, setName] = useState(tenant?.name || "");
   const [phone, setPhone] = useState(tenant?.phone || "");
-  
+
   const [rent, setRent] = useState(String(tenant?.rent || ""));
   const [checkIn, setCheckIn] = useState(tenant?.checkIn || "");
   const [checkOut, setCheckOut] = useState(tenant?.checkOut || "");
@@ -53,18 +53,6 @@ export default function OwnerEditTenantScreen({ route, navigation }) {
     }
     if (!isValidName(name)) {
       Alert.alert("Validation Error", "Name must contain letters only.");
-      return;
-    }
-    if (!phone.trim()) {
-      Alert.alert("Validation Error", "Please enter a phone number.");
-      return;
-    }
-    if (!isValidPhone(phone)) {
-      Alert.alert("Validation Error", "Phone number must be 10 or 11 digits.");
-      return;
-    }
-    if (!isValidEmail(phone)) {
-      Alert.alert("Validation Error", "Please enter a valid phone address.");
       return;
     }
     if (!rent.trim() || isNaN(rent)) {
@@ -105,7 +93,6 @@ export default function OwnerEditTenantScreen({ route, navigation }) {
       const payload = {
         name: name.trim(),
         phone: phone.trim(),
-        phone: phone.trim(),
         rent: Number(rent),
         checkIn: checkIn.trim(),
         checkOut: checkOut.trim() || null,
@@ -126,7 +113,7 @@ export default function OwnerEditTenantScreen({ route, navigation }) {
       console.log("Updating tenant at:", url);
       console.log("Payload:", payload);
 
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -256,30 +243,6 @@ export default function OwnerEditTenantScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* CONTACT PHONE */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="call-outline" size={18} color="#757575" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. 9876543210"
-                  keyboardType="phone-pad"
-                  value={phone}
-                  onChangeText={setPhone}
-                />
-              </View>
-              <Text style={styles.helperText}>Changing the phone updates the login ID/record.</Text>
-            </View>
-
-            {/* phone */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>phone Address (Optional)</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={18} color="#757575" style={styles.inputIcon} />
-                
-              </View>
-            </View>
 
             {/* MONTHLY RENT */}
             <View style={styles.inputGroup}>

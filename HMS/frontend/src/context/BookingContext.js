@@ -2,7 +2,7 @@ import React, { createContext, useState, useEffect, useRef } from "react";
 import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLanguage } from '../utils/LanguageContext';
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 
 export const BookingContext = createContext();
 
@@ -42,7 +42,7 @@ export const BookingProvider = ({ children }) => {
       const isOwner = await AsyncStorage.getItem("ownerPhone");
       const endpoint = isOwner ? "owner_requests" : "tenant_notifications";
       
-      const response = await fetch(`${BASE_URL}/api/${endpoint}/${encodeURIComponent(userPhone)}/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/${endpoint}/${encodeURIComponent(userPhone)}/`);
       const data = await response.json();
       if (Array.isArray(data)) {
         setRequests(data);

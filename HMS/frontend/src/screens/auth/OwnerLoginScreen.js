@@ -1,6 +1,7 @@
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   ActivityIndicator,
@@ -112,7 +113,7 @@ export default function OwnerLoginScreen({ navigation }) {
         try {
 
           // CHECK OWNER EXISTS
-          const checkResponse = await fetch(
+          const checkResponse = await fetchWithAuth(
             `${BASE_URL}/api/check-owner/${phone}/`
           );
 
@@ -125,21 +126,19 @@ export default function OwnerLoginScreen({ navigation }) {
             // EXISTING OWNER
             Alert.alert("Welcome", "Login Successful");
 
-            import("@react-native-async-storage/async-storage").then(async ({ default: AsyncStorage }) => {
-              await AsyncStorage.setItem("ownerPhone", userData.user.phone);
-              await AsyncStorage.setItem("ownerPhone", userData.user.phone);
-              
-              const raw = await AsyncStorage.getItem("loggedInOwnerAccounts");
-              let accounts = raw ? JSON.parse(raw) : [];
-              if (!accounts.find(a => a.phone === userData.user.phone)) {
-                accounts.push({ phone: userData.user.phone, phone: userData.user.phone, name: userData.user.name });
-                await AsyncStorage.setItem("loggedInOwnerAccounts", JSON.stringify(accounts));
-              }
+            if (userData.token) await AsyncStorage.setItem("userToken", userData.token);
+            await AsyncStorage.setItem("ownerPhone", userData.user.phone);
+            
+            const raw = await AsyncStorage.getItem("loggedInOwnerAccounts");
+            let accounts = raw ? JSON.parse(raw) : [];
+            if (!accounts.find(a => a.phone === userData.user.phone)) {
+              accounts.push({ phone: userData.user.phone, name: userData.user.name });
+              await AsyncStorage.setItem("loggedInOwnerAccounts", JSON.stringify(accounts));
+            }
 
-              navigation.reset({
-                index: 0,
-                routes: [{ name: "OwnerNavigation", params: { phone: userData.user.phone } }],
-              });
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "OwnerNavigation", params: { phone: userData.user.phone } }],
             });
 
           } else {

@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import COLORS from '../../theme/colors';
-import BASE_URL from '../../config/Api';
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
 
 export default function OwnerPaymentHistoryScreen({ route, navigation }) {
     const { phone } = route.params || {};
@@ -31,7 +31,7 @@ export default function OwnerPaymentHistoryScreen({ route, navigation }) {
                 return;
             }
 
-            const response = await fetch(`${BASE_URL}/api/owner-payments/${encodeURIComponent(ownerPhone)}/`);
+            const response = await fetchWithAuth(`${BASE_URL}/api/owner-payments/${encodeURIComponent(ownerPhone)}/`);
             const data = await response.json();
 
             if (Array.isArray(data)) {

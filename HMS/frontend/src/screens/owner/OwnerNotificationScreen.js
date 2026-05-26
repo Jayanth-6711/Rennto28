@@ -18,7 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { BookingContext } from "@/src/context/BookingContext";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useLanguage } from '../../utils/LanguageContext';
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import COLORS from "../../theme/colors";
 
 const OwnerNotificationScreen = ({ route }) => {
@@ -78,7 +78,7 @@ const OwnerNotificationScreen = ({ route }) => {
     if (!phone) return;
     if (!refreshing) setLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/api/owner_requests/${encodeURIComponent(phone)}/`);
+      const res = await fetchWithAuth(`${BASE_URL}/api/owner_requests/${encodeURIComponent(phone)}/`);
       const data = await res.json();
       setRequests(data);
       setGlobalRequests(data);
@@ -110,7 +110,7 @@ const OwnerNotificationScreen = ({ route }) => {
 
   const handleAction = async (action, id) => {
     try {
-      const res = await fetch(`${BASE_URL}/api/update_request_status/`, {
+      const res = await fetchWithAuth(`${BASE_URL}/api/update_request_status/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: id, status: action }),

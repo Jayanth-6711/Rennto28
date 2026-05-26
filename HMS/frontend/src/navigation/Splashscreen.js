@@ -1,7 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect } from "react";
-import { Dimensions, StatusBar, StyleSheet } from "react-native";
-import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, G } from "react-native-svg";
+import { Dimensions, Image, StatusBar, StyleSheet } from "react-native";
  
 import Animated, {
   Easing,
@@ -51,7 +50,7 @@ export default function SplashScreen({ onFinish }) {
  
     // Exit animation (shortened slightly for standard splash behavior)
     screenOpacity.value = withDelay(
-      3000, // Adjusted for smoother transition
+      5000, // Adjusted for smoother transition
       withTiming(0, { duration: 900 }, (finished) => {
         if (finished && onFinish) {
           runOnJS(onFinish)();
@@ -87,43 +86,18 @@ export default function SplashScreen({ onFinish }) {
         <Animated.View style={[styles.bubble, styles.b2]} />
         <Animated.View style={[styles.bubble, styles.b3]} />
  
-        {/* Custom Rennto SVG Logo */}
-        <Animated.View style={logoStyle}>
-          <Svg width="150" height="150" viewBox="0 0 200 200">
-            <Defs>
-              <SvgLinearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
-                <Stop offset="0" stopColor="#FFFFFF" stopOpacity="1" />
-                <Stop offset="1" stopColor="#D8B4E2" stopOpacity="1" />
-              </SvgLinearGradient>
-            </Defs>
-            <G
-              stroke="url(#logoGrad)"
-              strokeWidth="10"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {/* House Outline (Left & Bottom) */}
-              <Path d="M 100 40 L 40 90 L 40 160 L 80 160 L 80 110 L 120 110 L 120 160 L 160 160" />
-              {/* Network Node Diagonal */}
-              <Path d="M 100 40 L 150 90 L 110 130 L 160 160" />
-              {/* Upward Arrow (Right side) */}
-              <Path d="M 110 130 L 160 80" />
-              <Path d="M 130 80 L 160 80 L 160 110" />
-             
-              {/* Network Dots */}
-              <Circle cx="100" cy="40" r="8" fill="url(#logoGrad)" stroke="none" />
-              <Circle cx="150" cy="90" r="8" fill="url(#logoGrad)" stroke="none" />
-              <Circle cx="110" cy="130" r="8" fill="url(#logoGrad)" stroke="none" />
-              <Circle cx="160" cy="160" r="8" fill="url(#logoGrad)" stroke="none" />
-            </G>
-          </Svg>
-        </Animated.View>
+
+
+ {/* Rennto PNG Logo */}
+<Animated.View style={logoStyle}>
+  <Image
+    source={require("../../assets/images/RenntoLogo.png")}
+    style={styles.logo}
+    resizeMode="contain"
+  />
+</Animated.View>
  
-        {/* Rennto Title */}
-        <Animated.Text style={[styles.title, titleStyle]}>
-          Rennto
-        </Animated.Text>
+       
  
         {/* Subtitle */}
         <Animated.Text style={[styles.subtitle, subtitleStyle]}>
@@ -144,6 +118,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     overflow: "hidden",
   },
+  logo: {
+  width: 220,
+  height: 220,
+},
   title: {
     marginTop: 10,
     fontSize: 42,

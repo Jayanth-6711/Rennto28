@@ -14,10 +14,44 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import BASE_URL from '@/src/config/Api';
-import COLORS from '../../theme/colors';
+import axiosOriginal from 'axios';
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
+
+const axios = {
+  get: async (url, config = {}) => {
+    const res = await fetchWithAuth(url, { ...config, method: 'GET' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(`Request failed with status code ${res.status}`);
+      err.response = { data, status: res.status };
+      throw err;
+    }
+    return { data, status: res.status };
+  },
+  post: async (url, body, config = {}) => {
+    const isFormData = body instanceof FormData;
+    const headers = { ...config.headers };
+    if (!isFormData && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    const res = await fetchWithAuth(url, {
+      ...config,
+      method: 'POST',
+      headers,
+      body: isFormData ? body : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(`Request failed with status code ${res.status}`);
+      err.response = { data, status: res.status };
+      throw err;
+    }
+    return { data, status: res.status };
+  }
+};
 import { useLanguage } from '../../utils/LanguageContext';
+import COLORS from '../../theme/colors';
 
 const { width, height } = Dimensions.get('window');
 

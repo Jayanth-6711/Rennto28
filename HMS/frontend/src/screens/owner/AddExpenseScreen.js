@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import COLORS from '../../theme/colors';
-import BASE_URL from '@/src/config/Api';
+import BASE_URL, { fetchWithAuth } from '@/src/config/Api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function OwnerExpenseScreen({ navigation }) {
@@ -22,7 +22,7 @@ export default function OwnerExpenseScreen({ navigation }) {
             setLoading(true);
             const ownerPhone = await AsyncStorage.getItem('ownerPhone');
             
-            const response = await fetch(`${BASE_URL}/api/add-expense/`, {
+            const response = await fetchWithAuth(`${BASE_URL}/api/add-expense/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

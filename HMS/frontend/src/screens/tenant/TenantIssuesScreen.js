@@ -1,9 +1,9 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useMemo, useState, useEffect, useCallback } from "react";
-import BASE_URL from "@/src/config/Api";
-import { useFocusEffect } from "@react-navigation/native";
+import { useMemo, useState, useEffect } from "react";
+import { useNavigation } from "@react-navigation/native";
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
 import { useLanguage } from "../../utils/LanguageContext";
 import {
   Alert,
@@ -50,6 +50,7 @@ if (
 
 export default function IssuesScreen() {
   const { t } = useLanguage();
+  const navigation = useNavigation();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Medium");
@@ -60,43 +61,23 @@ export default function IssuesScreen() {
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [activeFilter, setActiveFilter] = useState("All");
   const [loading, setLoading] = useState(false);
-
+  const [phone, setPhone] = useState("");
   const [tenantId, setTenantId] = useState("");
-  const [tenantPhone, setTenantPhone] = useState("");
-  const [tenantEmail, setTenantEmail] = useState("");
 
   useEffect(() => {
     const getTenantData = async () => {
-      try {
-        const storedId = await AsyncStorage.getItem("tenantId");
-        const storedPhone = await AsyncStorage.getItem("tenantPhone");
-        const storedEmail = await AsyncStorage.getItem("tenantEmail");
-
-        console.log("STORED TENANT ID:", storedId);
-        console.log("STORED TENANT PHONE:", storedPhone);
-        console.log("STORED TENANT EMAIL:", storedEmail);
-
-        if (storedId) {
-          setTenantId(storedId);
-        }
-        if (storedPhone) {
-          setTenantPhone(storedPhone);
-        }
-        if (storedEmail) {
-          setTenantEmail(storedEmail);
-        }
-      } catch (error) {
-        console.log("ASYNC STORAGE ERROR:", error);
-      }
+      const storedPhone = await AsyncStorage.getItem("tenantPhone");
+      const storedId = await AsyncStorage.getItem("tenantId");
+      if (storedPhone) setPhone(storedPhone);
+      if (storedId) setTenantId(storedId);
     };
-
     getTenantData();
   }, []);
 
 
   const handleUpdate = async () => {
     try {
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/update-issue/${editingId}/`,
         {
           method: "PATCH",
@@ -125,59 +106,27 @@ export default function IssuesScreen() {
       Alert.alert("Error", err.message);
     }
   };
-  // Fetch issues using tenant ID
   const fetchIssues = async () => {
-    if (!tenantId) {
-      console.log('Tenant ID not available yet; skipping fetch.');
-      return;
-    }
-
-    setLoading(true);
-
     try {
-      console.log('FETCHING ISSUES FOR tenant ID:', tenantId);
-      const response = await fetch(`${BASE_URL}/api/tenant-issues/${tenantId}/`);
+      const storedPhone = await AsyncStorage.getItem("tenantPhone");
+      if (!storedPhone) return;
+      setLoading(true);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log('Fetch Issues HTTP error:', response.status, errorText);
-        setIssues([]);
-        return;
-      }
-
+      const response = await fetchWithAuth(
+        `${BASE_URL}/api/tenant-issues/${encodeURIComponent(storedPhone)}/`
+      );
       const data = await response.json();
-
-      let issuesArray = [];
-      if (Array.isArray(data)) {
-        issuesArray = data;
-      } else if (data && Array.isArray(data.results)) {
-        issuesArray = data.results;
-      } else if (data && Array.isArray(data.issues)) {
-        issuesArray = data.issues;
-      }
-      setIssues(issuesArray);
+      setIssues(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.log('Fetch Issues Error:', error);
+      console.log("Fetch Issues Error:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch issues when tenantEmail becomes available.
   useEffect(() => {
-    if (tenantEmail) {
-      fetchIssues();
-    }
-  }, [tenantId]);
-
-  // Refetch issues when screen gains focus and tenantId is set.
-  useFocusEffect(
-    useCallback(() => {
-      if (tenantId) {
-        fetchIssues();
-      }
-    }, [tenantId])
-  );
+    fetchIssues();
+  }, [phone]);
 
   // Aligned with your specific STATUS colors
   const priorities = [
@@ -227,65 +176,41 @@ export default function IssuesScreen() {
       return;
     }
 
-    if (!tenantId) {
-      Alert.alert("Error", "Tenant not found. Login again.");
-      return;
-    }
-
     try {
-      console.log("SUBMITTING TENANT ID:", tenantId);
-
       const formData = new FormData();
 
-      formData.append("tenant_id", tenantId.toString());
+      formData.append("tenant_id", tenantId);
+      formData.append("email", phone);
       formData.append("title", title);
       formData.append("description", description);
       formData.append("severity", priority);
 
+      // ✅ ADD IMAGE
       if (image) {
         formData.append("image", {
-          uri: image.startsWith("file://") ? image : `file://${image}`,
+          uri: image,
           name: "issue.jpg",
           type: "image/jpeg",
         });
       }
 
-      const response = await fetch(`${BASE_URL}/api/create-issue/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/create-issue/`, {
         method: "POST",
-        body: formData,
-        headers: {
-          "Accept": "application/json",
-        },
-      });
-
-      const data = await response.json();
-
-      console.log("CREATE ISSUE RESPONSE:", data);
+        body: formData, // ✅ only this
+      }
+      );
 
       if (response.status === 201) {
         Alert.alert("Success", "Issue submitted successfully");
-
         setTitle("");
         setDescription("");
         setPriority("Medium");
-        setImage(null);
+        setImage(null); // ✅ reset image
         setIsFormVisible(false);
-        // Optimistically add the new issue to the list (fallback generates temporary ID)
-        const tempId = Date.now();
-        const newIssue = {
-          id: data && data.id ? data.id : tempId,
-          title,
-          description,
-          severity: priority,
-          image: image,
-          status: "Pending",
-          created_at: new Date().toISOString(),
-        };
-        setIssues((prev) => [newIssue, ...prev]);
-
-        fetchIssues(); // re-enable to sync with backend after submission
+        fetchIssues();
       } else {
-        Alert.alert("Error", data.error || "Failed to submit issue");
+        const err = await response.json();
+        Alert.alert("Error", err.error || "Failed to submit issue");
       }
     } catch (error) {
       console.log("Submit Issue Error:", error);
@@ -331,7 +256,15 @@ export default function IssuesScreen() {
   //   setIsFormVisible(false);
   // };
 
-  const deleteIssue = (id) => {
+  const formatLabel = (str) => {
+    if (!str) return '';
+    return str
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const deleteIssue = async (id) => {
     Alert.alert("Confirm Deletion", "Remove this issue permanently?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -339,7 +272,7 @@ export default function IssuesScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            const response = await fetch(`${BASE_URL}/api/delete-issue/${id}/`, {
+            const response = await fetchWithAuth(`${BASE_URL}/api/delete-issue/${id}/`, {
               method: "DELETE",
             });
 
@@ -376,20 +309,31 @@ export default function IssuesScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* HEADER */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerSubtitle}>{t('tenant')}</Text>
-          <Text style={styles.headerTitle}>{t('issues')}</Text>
+        <View style={styles.headerLeftContainer}>
+          <TouchableOpacity 
+            onPress={() => navigation.goBack()} 
+            style={styles.backButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.TEXT_PRIMARY} />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerSubtitle}>{t('tenant')}</Text>
+            <Text style={styles.headerTitle}>{t('issues')}</Text>
+          </View>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={toggleForm}>
-          <Ionicons
-            name={isFormVisible ? "close" : "add"}
-            size={22}
-            color={COLORS.WHITE}
-          />
-          <Text style={styles.addButtonText}>
-            {isFormVisible ? t('skip') : t('report_issue')}
-          </Text>
-        </TouchableOpacity>
+        
+        <View style={styles.headerRightActions}>
+          <TouchableOpacity style={styles.addButton} onPress={toggleForm}>
+            <Ionicons
+              name={isFormVisible ? "close" : "add"}
+              size={20}
+              color={COLORS.WHITE}
+            />
+            <Text style={styles.addButtonText}>
+              {isFormVisible ? t('skip') : t('Report Issue')}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -426,7 +370,7 @@ export default function IssuesScreen() {
         {isFormVisible && (
           <View style={styles.formCard}>
             <Text style={styles.formHeader}>
-              {editingId ? t('update_status') : t('report_issue')}
+              {editingId ? t('update_status') : t('Report Issue')}
             </Text>
 
             <Text style={styles.inputLabel}>{t('type')}</Text>
@@ -559,14 +503,10 @@ export default function IssuesScreen() {
             const pData =
               priorities.find((p) => p.label === item.severity) || priorities[1];
 
-            const isCompleted = item.status === "Completed";
-            const isWorking =
-              item.status === "Pending" || item.status === "In Progress";
-
             return (
               <View key={item.id} style={styles.issueCard}>
 
-                {/* TOP ROW */}
+                {/* STATUS & DATE */}
                 <View style={styles.issueTopRow}>
                   <View
                     style={[
@@ -579,88 +519,31 @@ export default function IssuesScreen() {
                   </Text>
                 </View>
 
-                {/* ✅ COMPLETED VIEW */}
-                {isCompleted ? (
-                  <>
-                    <Text
-                      style={{
-                        fontSize: 14,
-                        fontWeight: "700",
-                        color: "green",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Status: {item.status}
-                    </Text>
+                {/* ISSUE DETAILS */}
+                <Text style={styles.issueTitle}>{item.title}</Text>
+                <Text style={styles.issueDesc}>{item.description}</Text>
 
-                    {item.owner_comment && (
-                      <View
-                        style={{
-                          marginTop: 8,
-                          padding: 12,
-                          backgroundColor: "#F1F5F9",
-                          borderRadius: 10,
-                        }}
-                      >
-                        <Text style={{ fontWeight: "700", fontSize: 13 }}>
-                          Owner Response:
-                        </Text>
-                        <Text style={{ fontSize: 14, color: "#555", marginTop: 4 }}>
-                          {item.owner_comment}
-                        </Text>
-                      </View>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {/* NORMAL DETAILS */}
-                    <Text style={styles.issueTitle}>{item.title}</Text>
+                {item.image && (
+                  <Image
+                    source={{ uri: item.image.startsWith('http') ? item.image : `${BASE_URL}${item.image}` }}
+                    style={styles.issueImage}
+                  />
+                )}
 
-                    <Text style={styles.issueDesc} numberOfLines={2}>
-                      {item.description}
-                    </Text>
+                {/* STATUS BADGE */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 6 }}>
+                  <View style={[styles.statusDot, { backgroundColor: pData.color }]} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: pData.color }}>
+                    {formatLabel(item.status)}
+                  </Text>
+                </View>
 
-                    {item.image && (
-                      <Image
-                        source={{ uri: item.image }}
-                        style={styles.issueImage}
-                      />
-                    )}
-
-                    {/* ✅ ADD THIS BLOCK (Pending + In Progress) */}
-                    {isWorking && item.owner_comment && (
-                      <View
-                        style={{
-                          marginTop: 10,
-                          padding: 12,
-                          backgroundColor: "#F1F5F9",
-                          borderRadius: 10,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            fontWeight: "700",
-                            marginBottom: 4,
-                            color:
-                              item.status === "Pending"
-                                ? "#F59E0B" // orange
-                                : "#3B82F6", // blue
-                          }}
-                        >
-                          Status: {item.status}
-                        </Text>
-
-                        <Text style={{ fontWeight: "700", fontSize: 13 }}>
-                          Owner Response:
-                        </Text>
-
-                        <Text style={{ fontSize: 14, color: "#555", marginTop: 4 }}>
-                          {item.owner_comment}
-                        </Text>
-                      </View>
-                    )}
-                  </>
+                {/* OWNER RESPONSE */}
+                {item.owner_comment && (
+                  <View style={styles.ownerResponseBox}>
+                    <Text style={styles.ownerResponseTitle}>Owner Response:</Text>
+                    <Text style={styles.ownerResponseText}>{item.owner_comment}</Text>
+                  </View>
                 )}
 
                 {/* FOOTER */}
@@ -719,6 +602,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderBottomWidth: 1,
     borderBottomColor: COLORS.BORDER,
+  },
+  headerLeftContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  backButton: {
+    marginRight: 12,
+    padding: 4,
+  },
+  headerRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  refreshBtn: {
+    padding: 8,
+    backgroundColor: COLORS.BLUE_LIGHT,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerSubtitle: {
     fontSize: 12,
@@ -909,24 +812,49 @@ const styles = StyleSheet.create({
   issueDate: { fontSize: 12, color: COLORS.TEXT_LIGHT, fontWeight: "600" },
 
   issueTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "800",
     color: COLORS.TEXT_PRIMARY,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   issueDesc: {
     fontSize: 14,
     color: COLORS.TEXT_SECONDARY,
-    lineHeight: 22,
-    marginBottom: 16,
+    lineHeight: 20,
+    marginBottom: 12,
   },
   issueImage: {
     width: "100%",
-    height: 160,
+    height: 180,
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 12,
+    backgroundColor: COLORS.BACKGROUND,
   },
-
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  ownerResponseBox: {
+    marginTop: 12,
+    padding: 14,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  ownerResponseTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 4,
+  },
+  ownerResponseText: {
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 20,
+  },
   issueFooter: {
     flexDirection: "row",
     justifyContent: "space-between",

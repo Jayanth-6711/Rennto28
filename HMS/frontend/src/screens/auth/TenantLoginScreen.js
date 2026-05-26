@@ -4,7 +4,7 @@ import { useState, useContext } from "react";
 import { BookingContext } from "@/src/context/BookingContext";
 import { useLanguage } from "../../utils/LanguageContext";
  
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   KeyboardAvoidingView,
@@ -70,7 +70,7 @@ export default function TenantLoginScreen({ navigation }) {
     setLoading(true);
  
     try {
-      const response = await fetch(`${BASE_URL}/api/login/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/login/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -87,14 +87,18 @@ export default function TenantLoginScreen({ navigation }) {
       const data = JSON.parse(text);
  
       if (response.ok) {
-        // ⭐ SAVE phone
+        // ⭐ SAVE phone & token
         await AsyncStorage.setItem("tenantPhone", data.phone);
+        if (data.token) {
+            await AsyncStorage.setItem("userToken", data.token);
+            console.log("Saved userToken:", data.token);
+        }
         setuserPhone(data.phone); // ✅ Update BookingContext
         console.log("Saved Tenant phone:", data.phone);
  
         // ⭐ CHECK REQUEST STATUS
         try {
-          const res = await fetch(
+          const res = await fetchWithAuth(
             `${BASE_URL}/api/tenant_notifications/${encodeURIComponent(data.phone)}/`
           );
  

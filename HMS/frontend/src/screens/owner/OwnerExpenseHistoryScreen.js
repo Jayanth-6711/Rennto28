@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator }
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import COLORS from '../../theme/colors';
-import BASE_URL from '../../config/Api';
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
 import { useLanguage } from '../../utils/LanguageContext';
 
 export default function OwnerExpenseHistoryScreen({ navigation }) {
@@ -20,7 +20,7 @@ export default function OwnerExpenseHistoryScreen({ navigation }) {
             const rawEmail = await AsyncStorage.getItem("ownerPhone");
             if (!rawEmail) return;
             const phone = rawEmail.trim();
-            const response = await fetch(`${BASE_URL}/api/owner-expenses/${encodeURIComponent(phone)}/`);
+            const response = await fetchWithAuth(`${BASE_URL}/api/owner-expenses/${encodeURIComponent(phone)}/`);
             const data = await response.json();
             if (response.ok) {
                 setExpenses(Array.isArray(data) ? data : (data.data || []));

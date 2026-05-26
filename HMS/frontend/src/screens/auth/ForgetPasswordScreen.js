@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -29,7 +29,7 @@ export default function ForgetPasswordScreen({ navigation }) {
     }
 
     try {
-      const response = await fetch(`${BASE_URL}/api/forgot-password/`, {
+      const response = await fetchWithAuth(`${BASE_URL}/api/forgot-password/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

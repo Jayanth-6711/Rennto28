@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FaEye } from "react-icons/fa";
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 
 function ActivityTable() {
   const [owners, setOwners] = useState([]);
@@ -35,7 +35,7 @@ function ActivityTable() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(`${BASE_URL}/api/owner-admin/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner-admin/`);
       const result = await response.json();
 
       if (response.ok && result?.data) {

@@ -7,7 +7,7 @@ import {
 
 import Profile from "../pages/Profile";
 import { useNotifications } from "../context/NotificationContext";
-import BASE_URL from "../config/Api";
+import BASE_URL, { fetchWithAuth } from "../config/Api";
 
 function Header({ onLogout }) {
     const navigate = useNavigate();
@@ -31,8 +31,8 @@ function Header({ onLogout }) {
         const fetchData = async () => {
             try {
                 const [ownersRes, propsRes] = await Promise.allSettled([
-                    fetch(`${BASE_URL}/api/owner-admin/`),
-                    fetch(`${BASE_URL}/api/get_all_property_basic_details/`),
+                    fetchWithAuth(`${BASE_URL}/api/owner-admin/`),
+                    fetchWithAuth(`${BASE_URL}/api/get_all_property_basic_details/`),
                 ]);
 
                 if (ownersRes.status === "fulfilled" && ownersRes.value.ok) {

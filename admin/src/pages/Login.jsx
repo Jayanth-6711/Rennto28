@@ -2,18 +2,31 @@ import React, { useState } from "react";
 import logo from "../assets/logo.png";
 import "./../App.css";
 
+import BASE_URL from "../config/Api";
+
 const Login = ({ onLogin }) => {
     const [phone, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        // Simple dummy validation
-        if (phone === "admin@stayefy.com" && password === "admin123") {
-            onLogin();
-        } else {
-            setError("Invalid phone or password. Hint: admin@stayefy.com / admin123");
+        try {
+            const response = await fetch(`${BASE_URL}/api/admin-login/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ phone, password })
+            });
+            const data = await response.json();
+            
+            if (response.ok) {
+                localStorage.setItem("adminToken", data.token);
+                onLogin();
+            } else {
+                setError(data.error || "Invalid phone or password.");
+            }
+        } catch (err) {
+            setError("Network error occurred: " + err.message);
         }
     };
 

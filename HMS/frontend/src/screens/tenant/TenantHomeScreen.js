@@ -1,5 +1,5 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DateTimePicker from "@react-native-community/datetimepicker";   //1 2
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { TenantContext } from "@/src/context/TenantContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BASE_URL from "@/src/config/Api";
+import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import { LinearGradient } from "expo-linear-gradient";
 
 import {
@@ -66,7 +66,7 @@ export default function TenantHomeScreen({ route }) {
   const [allProperties, setAllProperties] = useState([]);
   const [selectedCommercialFeature, setSelectedCommercialFeature] =
     useState("");
-  const [minRating, setMinRating] = useState(0);
+
   const [nearMe, setNearMe] = useState(0);
   const [userCoords, setUserCoords] = useState(null);
 
@@ -109,7 +109,7 @@ export default function TenantHomeScreen({ route }) {
         return;
       }
 
-      const res = await fetch(`${BASE_URL}/api/tenant_notifications/${encodeURIComponent(tenantPhone)}/`, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetchWithAuth(`${BASE_URL}/api/tenant_notifications/${encodeURIComponent(tenantPhone)}/`, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
       if (!res.ok) {
         console.error(`Failed to fetch tenant notifications: ${res.status} ${res.statusText}`);
         return;
@@ -166,7 +166,7 @@ export default function TenantHomeScreen({ route }) {
     try {
       console.log("Fetching properties...");
 
-      const response = await fetch(`${BASE_URL}/api/owner_props/`);
+      const response = await fetchWithAuth(`${BASE_URL}/api/owner_props/`);
       const result = await response.json();
 
       console.log("API RESPONSE:", result);
@@ -207,12 +207,15 @@ export default function TenantHomeScreen({ route }) {
           longitude: item.longitude ? parseFloat(item.longitude) : null,
 
           image: mainImage || "https://via.placeholder.com/400",
-          rating: item.rating || 4.5,
+
           isAvailable: item.isAvailable ?? true,
           ownerName: item.owner_name || "Owner",
 
           facilities: item.facilities || [],
           galleryImages: galleryImages,
+
+          commercialType: item.commercialType || "",
+          officeType: item.officeType || "",
         };
       });
 
@@ -387,56 +390,122 @@ export default function TenantHomeScreen({ route }) {
   // Filtering Logic
   // Updated Filtering Logic
   const filteredProperties = allProperties.filter((item) => {
-    // 1. Text Search (Name, Address, or Type)
-    const matchesSearch =
-      (item.name || "").toLowerCase().includes(mainSearch.toLowerCase()) ||
-      (item.address || "").toLowerCase().includes(mainSearch.toLowerCase()) ||
-      (item.type || "").toLowerCase().includes(mainSearch.toLowerCase());
-    // 2. Type Filter
-    const matchesType = selectedType === "All" || item.type === selectedType;
 
-    // 3. Distance Filter (CRITICAL FIX)
+    // 1. Search
+    const q = mainSearch.toLowerCase().trim();
+
+    const searchText = q
+      .trim()
+      .toLowerCase();
+
+    const searchableText = `
+  ${item.name || ""}
+  ${item.address || ""}
+  ${item.type || ""}
+  ${item.hostelType || ""}
+  ${item.allowedTenants || ""}
+  ${item.commercialType || ""}
+  ${item.officeType || ""}
+  ${(item.facilities || []).join(" ")}
+`
+      .toLowerCase()
+      .replace(/,/g, " ")
+      .replace(/\s+/g, " ");
+
+    const matchesSearch =
+      searchText === "" ||
+      searchableText.includes(searchText);
+
+    // 2. Category
+    const matchesType =
+      selectedType === "All" ||
+      item.type === selectedType;
+
+    // 3. Distance
     let matchesDistance = true;
-    if (nearMe > 0) {
-      if (userCoords) {
-        const distance = getDistance(
-          userCoords.latitude,
-          userCoords.longitude,
-          item.latitude,
-          item.longitude,
-        );
-        matchesDistance = distance <= nearMe;
-      } else {
-        // If Near Me is active but we don't have coords yet, hide all or show warning
-        matchesDistance = false;
+
+
+    if (nearMe > 0 && userCoords) {
+      if (!item.latitude || !item.longitude) {
+        return false;
       }
+      const distance = getDistance(
+        userCoords.latitude,
+        userCoords.longitude,
+        item.latitude,
+        item.longitude
+      );
+
+      matchesDistance = distance <= nearMe;
+    } else if (nearMe > 0 && !userCoords) {
+      matchesDistance = false;
     }
 
-    // 4. Sub-filters (Rating and Facilities)
-    const matchesRating = item.rating >= minRating;
+
+
+    // 5. Facilities
     const matchesFacilities =
       selectedFacilities.length === 0 ||
-      selectedFacilities.every((f) => item.facilities?.includes(f));
+      selectedFacilities.every((f) =>
+        item.facilities?.includes(f)
+      );
 
-    // 5. Category Specifics
+    // 6. Sub Filters
     let matchesSpecial = true;
-    if (item.type === "Hostel" && selectedHostelType) {
+
+    if (
+      selectedHostelType &&
+      item.type === "Hostel"
+    ) {
       matchesSpecial =
-        item.hostelType?.toLowerCase() === selectedHostelType.toLowerCase();
+        (item.hostelType || "")
+          .toLowerCase() ===
+        selectedHostelType.toLowerCase();
     }
-    if (item.type === "Apartment" && selectedTenantType) {
-      matchesSpecial = item.allowedTenants?.includes(selectedTenantType);
+
+    if (
+      selectedTenantType &&
+      item.type === "Apartment"
+    ) {
+
+      const tenantValue =
+        (item.allowedTenants || "")
+          .toLowerCase()
+          .trim();
+
+      matchesSpecial =
+        tenantValue ===
+        selectedTenantType.toLowerCase();
+
+    }
+    if (
+      selectedCommercialFeature &&
+      item.type === "Commercial"
+    ) {
+
+      const commercialValue =
+        (
+          item.commercialType ||
+          item.officeType ||
+          ""
+        ).toLowerCase().trim();
+
+      matchesSpecial =
+        commercialValue ===
+        selectedCommercialFeature.toLowerCase();
+
     }
 
     return (
       matchesSearch &&
       matchesType &&
       matchesDistance &&
-      matchesRating &&
+
       matchesFacilities &&
       matchesSpecial &&
       item.isAvailable
     );
+
   }).sort((a, b) => {
     const normalize = (str) => (str || "").replace(/\s+/g, '').toLowerCase();
 
@@ -465,6 +534,38 @@ export default function TenantHomeScreen({ route }) {
 
     return 0;
   });
+  const handleSelectType = (type) => {
+
+    if (selectedType === type) {
+      setSelectedType("All");
+    } else {
+      setSelectedType(type);
+    }
+
+    setSelectedHostelType("");
+    setSelectedTenantType("");
+    setSelectedCommercialFeature("");
+  };
+
+  const resetAllFilters = () => {
+    setSelectedFacilities([]);
+    setSelectedHostelType("");
+    setSelectedTenantType("");
+    setSelectedCommercialFeature("");
+
+    setNearMe(0);
+    setSelectedType("All");
+    setMainSearch("");
+  };
+  const activeFilterCount = [
+    nearMe > 0,
+
+    selectedType !== "All",
+    selectedHostelType !== "",
+    selectedTenantType !== "",
+    selectedCommercialFeature !== "",
+    selectedFacilities.length > 0,
+  ].filter(Boolean).length;
 
 
   return (
@@ -565,7 +666,11 @@ export default function TenantHomeScreen({ route }) {
                 placeholder="Search location, property..."
                 placeholderTextColor="#999"
                 value={mainSearch}
-                onChangeText={setMainSearch}
+                onChangeText={(text) => setMainSearch(text)}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                autoCorrect={false}
+                autoCapitalize="none"
               />
 
               <TouchableOpacity
@@ -580,6 +685,9 @@ export default function TenantHomeScreen({ route }) {
 
                 <Text style={homeStyles.filterText}>
                   Filters
+                  {activeFilterCount > 0
+                    ? ` (${activeFilterCount})`
+                    : ""}
                 </Text>
               </TouchableOpacity>
 
@@ -690,10 +798,7 @@ export default function TenantHomeScreen({ route }) {
                       resizeMode="cover"
                       onError={() => console.log("Card image failed:", item.image)}
                     />
-                    <View style={homeStyles.ratingTag}>
-                      <Ionicons name="star" size={12} color="#FFD700" />
-                      <Text style={homeStyles.ratingText}>{item.rating}</Text>
-                    </View>
+
                     <View style={homeStyles.cardBody}>
                       <View style={homeStyles.row}>
                         <Text style={homeStyles.cardName}>{item.name}</Text>
@@ -778,43 +883,72 @@ export default function TenantHomeScreen({ route }) {
                   ))}
                 </View>
 
-                {/* 2. USER RATING */}
-                <Text style={homeStyles.filterLabel}>Minimum Rating</Text>
-                <View style={homeStyles.filterRow}>
-                  {[3, 4, 4.5].map((r) => (
-                    <TouchableOpacity
-                      key={r}
-                      style={[
-                        homeStyles.chip,
-                        minRating === r && homeStyles.activeChip,
-                      ]}
-                      onPress={() => setMinRating(r)}
-                    >
-                      <Ionicons
-                        name="star"
-                        size={14}
-                        color={minRating === r ? "#fff" : "#FFD700"}
-                      />
-                      <Text
-                        style={[
-                          homeStyles.chipText,
-                          minRating === r && homeStyles.activeChipText,
-                        ]}
-                      >
-                        {" "}
-                        {r}+
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+
 
                 {/* 3. TYPE BASED DYNAMIC UI */}
                 <View style={homeStyles.divider} />
-                <Text style={homeStyles.filterLabel}>Category Specifics</Text>
+                <Text style={homeStyles.filterLabel}>
+                  Category
+                </Text>
+
+                <View style={homeStyles.categoryTabRow}>
+
+                  {categories.map((cat) => {
+
+                    const active = selectedType === cat.name;
+
+                    const categoryColor =
+                      cat.name === "Hostel"
+                        ? "#7c3aed"
+                        : cat.name === "Apartment"
+                          ? "#60a5fa"
+                          : cat.name === "Commercial"
+                            ? "#fb923c"
+                            : "#6C63FF";
+
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[
+                          homeStyles.categoryTab,
+                          {
+                            borderColor: active
+                              ? categoryColor
+                              : "#ececec",
+
+                            backgroundColor: active
+                              ? `${categoryColor}12`
+                              : "#fff",
+                          },
+                        ]}
+                        onPress={() =>
+                          handleSelectType(cat.name)
+                        }
+                      >
+                        <Ionicons
+                          name={cat.icon}
+                          size={20}
+                          color={categoryColor}
+                        />
+
+                        <Text
+                          style={[
+                            homeStyles.categoryTabText,
+                            {
+                              color: categoryColor,
+                            },
+                          ]}
+                        >
+                          {cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
                 {/* Conditional UI for HOSTEL */}
                 {selectedType === "Hostel" && (
-                  <View>
+                  <View style={homeStyles.subSection}>
                     <Text style={homeStyles.subLabel}>Hostel Type</Text>
                     <View style={homeStyles.filterRow}>
                       {["Boys", "Girls", "Coliving"].map((t) => (
@@ -846,7 +980,7 @@ export default function TenantHomeScreen({ route }) {
                   <View>
                     <Text style={homeStyles.subLabel}>Tenant / Size</Text>
                     <View style={homeStyles.filterRow}>
-                      {["Family", "Bachelor", "1BHK", "2BHK", "3BHK"].map(
+                      {["Family", "Bachelor", "1BHK", "2BHK", "3BHK", "4BHK", "5BHK"].map(
                         (t) => (
                           <TouchableOpacity
                             key={t}
@@ -960,7 +1094,7 @@ export default function TenantHomeScreen({ route }) {
                       setSelectedHostelType("");
                       setSelectedTenantType("");
                       setSelectedCommercialFeature("");
-                      setMinRating(0);
+
                       setNearMe(0);
                       setSelectedType("All");
                       setMainSearch("");
@@ -1010,7 +1144,7 @@ export function PropertyDetailsScreen(props) {
         const tenantPhone = await AsyncStorage.getItem("tenantPhone");
         if (!tenantPhone || !property?.ownerEmail) return;
 
-        const res = await fetch(
+        const res = await fetchWithAuth(
           `${BASE_URL}/api/check_request_status/${encodeURIComponent(tenantPhone)}/${encodeURIComponent(property.ownerEmail)}/${encodeURIComponent(property.name)}/`
         );
 
@@ -1267,7 +1401,7 @@ export function PropertyDetailsScreen(props) {
       console.log("Tenant Phone:", tenantPhone);
       console.log("Owner Phone:", property.contact);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `${BASE_URL}/api/send_request/`,
         {
           method: "POST",
@@ -1449,7 +1583,7 @@ export function PropertyDetailsScreen(props) {
           </View>
 
           <Text style={styles.typeText}>
-            {property.type} • ⭐ 4.8 (120 reviews)
+            {property.type}
           </Text>
 
           <Text style={{ fontSize: 13, color: COLORS.TEXT_SECONDARY, marginTop: 4, fontWeight: "700" }}>
@@ -2220,6 +2354,16 @@ const homeStyles = StyleSheet.create({
 
 
 
+  subSection: {
+    backgroundColor: "#fafafa",
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+
+
 
 
   categoryHeadingRow: {
@@ -2511,22 +2655,7 @@ const homeStyles = StyleSheet.create({
     height: 120,
     backgroundColor: "#f0f0f0",
   },
-  ratingTag: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "#fff",
-    padding: 5,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-  },
 
-  ratingText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    marginLeft: 3,
-  },
 
   cardBody: { padding: 15 },
 
@@ -2612,26 +2741,36 @@ const homeStyles = StyleSheet.create({
   },
 
   chip: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#f0f0f0",
-    borderWidth: 1,
-    borderColor: "#ddd",
     flexDirection: "row",
     alignItems: "center",
-  },
 
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+
+    borderRadius: 22,
+
+    backgroundColor: "#fafafa",
+
+    borderWidth: 1,
+    borderColor: "#ececec",
+
+    marginRight: 10,
+    marginBottom: 10,
+  },
   activeChip: {
-    backgroundColor: COLORS.PRIMARY,
-    borderColor: COLORS.PRIMARY,
+    backgroundColor: "#6C63FF15",
+    borderColor: "#6C63FF",
   },
 
-  chipText: { fontSize: 13, color: "#555" },
+  chipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#444",
+  },
 
   activeChipText: {
-    color: "#fff",
-    fontWeight: "600",
+    color: "#6C63FF",
+    fontWeight: "700",
   },
 
   divider: {
@@ -2649,6 +2788,37 @@ const homeStyles = StyleSheet.create({
     color: "#fff",
     fontSize: 10,
     fontWeight: "bold",
+  },
+  categoryTabRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 14,
+  },
+
+  categoryTab: {
+    flex: 1,
+
+    height: 72,
+
+    justifyContent: "center",
+    alignItems: "center",
+
+    borderRadius: 16,
+
+    borderWidth: 1,
+
+    backgroundColor: "#fff",
+
+    marginHorizontal: 4,
+
+    paddingVertical: 8,
+  },
+
+  categoryTabText: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 6,
   },
 });
 

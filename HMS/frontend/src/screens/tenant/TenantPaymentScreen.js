@@ -23,9 +23,44 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import axiosOriginal from 'axios';
 import QRCode from 'react-native-qrcode-svg';
-import BASE_URL from '../../config/Api';
+import BASE_URL, { fetchWithAuth } from '../../config/Api';
+
+const axios = {
+  get: async (url, config = {}) => {
+    const res = await fetchWithAuth(url, { ...config, method: 'GET' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(`Request failed with status code ${res.status}`);
+      err.response = { data, status: res.status };
+      throw err;
+    }
+    return { data, status: res.status };
+  },
+  post: async (url, body, config = {}) => {
+    // If it's a FormData object, fetchWithAuth will correctly handle it without 'Content-Type': 'application/json'
+    const isFormData = body instanceof FormData;
+    const headers = { ...config.headers };
+    if (!isFormData && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    const res = await fetchWithAuth(url, {
+      ...config,
+      method: 'POST',
+      headers,
+      body: isFormData ? body : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(`Request failed with status code ${res.status}`);
+      err.response = { data, status: res.status };
+      throw err;
+    }
+    return { data, status: res.status };
+  }
+};
 import { useLanguage } from '../../utils/LanguageContext';
 
 const { width } = Dimensions.get('window');
@@ -62,11 +97,12 @@ const TenantPaymentScreen = () => {
   const [fileSize, setFileSize] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-    const [cashDescription, setCashDescription] = useState('');
-    const [screenshotDescription, setScreenshotDescription] = useState('');
-    const [copying, setCopying] = useState(false);
-    const [ownerIssue, setOwnerIssue] = useState(null);
-    const [issueModalVisible, setIssueModalVisible] = useState(false);
+  const [cashDescription, setCashDescription] = useState('');
+  const [screenshotDescription, setScreenshotDescription] = useState('');
+  const [copying, setCopying] = useState(false);
+  const [paymentReminder, setPaymentReminder] = useState(null);
+  const [reminderModalVisible, setReminderModalVisible] = useState(false);
+  const [showActionModal, setShowActionModal] = useState(false);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -160,15 +196,32 @@ const TenantPaymentScreen = () => {
         dueDate: data?.dueDate || null,
       });
 
-      // OWNER ISSUE DETECTION
-      if (data?.ownerIssue) {
-        setOwnerIssue(data.ownerIssue);
-        // Only show popup automatically if it hasn't been acknowledged in this session
-        const ackIssueKey = `ack_issue_${phone}_${data.ownerIssue.id || 'issue'}`;
-        const issueAcknowledged = await AsyncStorage.getItem(ackIssueKey);
-        if (!issueAcknowledged && !isBackground) {
-          setIssueModalVisible(true);
+      // PAYMENT REMINDER DETECTION
+      if (data?.paymentReminder) {
+        setPaymentReminder({
+          ...data.paymentReminder
+        });
+        
+        // Auto-show if not acknowledged
+        const phone = await AsyncStorage.getItem('tenantPhone');
+        const ackKey = `ack_reminder_${phone}_${data.paymentReminder.id || 'reminder'}`;
+        const acknowledged = await AsyncStorage.getItem(ackKey);
+        if (!acknowledged && !isBackground) {
+          setReminderModalVisible(true);
         }
+      } else if (data?.remaining_balance > 0) {
+        // Handle pending balance as a system reminder if no explicit payment reminder
+        setPaymentReminder({
+          id: `balance_${data.remaining_balance}`,
+          title: t('remaining_balance') || 'Remaining Balance',
+          message: t('pending_balance_msg') || 'You have a remaining balance that needs to be cleared.',
+          details: `${t('pending_amount') || 'Pending Amount'}: ₹${data.remaining_balance}`,
+          pendingAmount: data.remaining_balance,
+          dueDate: data.dueDate,
+          type: 'balance'
+        });
+      } else {
+        setPaymentReminder(null);
       }
 
       // SUCCESS POPUP LOGIC
@@ -212,16 +265,6 @@ const TenantPaymentScreen = () => {
     }
   };
 
-  const getReminderConfig = () => {
-    if (!paymentData) return null;
-    const dueDays = paymentData?.dueDays;
-    if (dueDays < 0) return { color: '#FEE2E2', borderColor: '#EF4444', icon: 'alert-circle', iconColor: '#EF4444', title: t('payment overdue') || 'Payment Overdue', message: `${t('rent overdue by') || 'Your rent payment is overdue by'} ${Math.abs(dueDays)} ${t('days') || 'day(s)'}.` };
-    if (dueDays === 0) return { color: '#FEE2E2', borderColor: '#EF4444', icon: 'warning', iconColor: '#EF4444', title: t('payment due today') || 'Payment Due Today', message: t('complete rent today') || 'Please complete your rent payment today.' };
-    if (dueDays === 1) return { color: '#DBEAFE', borderColor: '#3B82F6', icon: 'notifications', iconColor: '#3B82F6', title: t('due tomorrow') || 'Due Tomorrow', message: t('rent due tomorrow') || 'Friendly reminder: Your rent is due tomorrow.' };
-    if (dueDays > 1 && dueDays <= 3) return { color: '#FEF3C7', borderColor: '#F59E0B', icon: 'time', iconColor: '#F59E0B', title: t('upcoming due date') || 'Upcoming Due Date', message: `${t('rent due in') || 'Your rent is due in'} ${dueDays} ${t('days') || 'day(s)'}.` };
-    return null;
-  };
-
   const handleUPIPayment = async (app) => {
     if (!paymentData?.upiId) {
       Alert.alert(t('error') || 'Error', t('upi_not_found') || 'Owner UPI ID not found.');
@@ -232,9 +275,9 @@ const TenantPaymentScreen = () => {
       // 📝 Create a PENDING payment record before opening UPI
       // This ensures we have a record to attach the screenshot to later
       await axios.post(`${BASE_URL}/api/create-payment/`, {
-        tenant_email: await AsyncStorage.getItem('tenantPhone'),
+        tenant_phone: await AsyncStorage.getItem('tenantPhone'),
         // tenant_name: paymentData.tenantName,
-        owner_email: paymentData.ownerPhone,
+        owner_phone: paymentData.ownerPhone,
         owner_name: paymentData.ownerName,
         property_name: paymentData.propertyName,
         upi_id: paymentData.upiId,
@@ -268,7 +311,7 @@ const TenantPaymentScreen = () => {
     }
 
     if (!paymentData?.ownerPhone) {
-      Alert.alert(t('error') || 'Error', t('owner_email_not_found') || 'Owner contact info not found. Please refresh.');
+      Alert.alert(t('error') || 'Error', t('owner_phone_not_found') || 'Owner contact info not found. Please refresh.');
       return;
     }
 
@@ -286,7 +329,7 @@ const TenantPaymentScreen = () => {
       
       // 2. Send instant notification to owner
       await axios.post(`${BASE_URL}/api/send-owner-notification/`, {
-        ownerPhone: paymentData.ownerPhone,
+        owner_phone: paymentData.ownerPhone,
         title: t('cash_payment_reported') || 'Cash Payment Reported',
         message: `${paymentData.tenantName} ${t('paid_cash_of') || "reported cash payment of"} ₹${paymentData.rent}. ${t('note') || "Note"}: ${cashDescription}`,
       });
@@ -337,7 +380,7 @@ const TenantPaymentScreen = () => {
     }
 
     if (!paymentData?.ownerPhone) {
-      Alert.alert(t('error') || 'Error', t('owner_email_not_found') || 'Owner contact info not found. Please refresh.');
+      Alert.alert(t('error') || 'Error', t('owner_phone_not_found') || 'Owner contact info not found. Please refresh.');
       return;
     }
 
@@ -362,7 +405,7 @@ const TenantPaymentScreen = () => {
 
       // 2. Send instant notification to owner with the description
       await axios.post(`${BASE_URL}/api/send-owner-notification/`, {
-        ownerPhone: paymentData.ownerPhone,
+        owner_phone: paymentData.ownerPhone,
         title: t('payment_proof_uploaded') || 'Payment Proof Uploaded',
         message: `${paymentData.tenantName} ${t('uploaded_proof_msg') || "uploaded proof for"} ₹${paymentData.rent}. ${screenshotDescription ? (t('note') || "Note") + ": " + screenshotDescription : ""}`,
       });
@@ -395,14 +438,14 @@ const TenantPaymentScreen = () => {
     }
   };
 
-  const handleAcknowledgeIssue = async () => {
+  const handleAcknowledgeReminder = async () => {
     try {
       const phone = await AsyncStorage.getItem('tenantPhone');
-      const ackIssueKey = `ack_issue_${phone}_${ownerIssue?.id || 'issue'}`;
-      await AsyncStorage.setItem(ackIssueKey, 'true');
-      setIssueModalVisible(false);
+      const ackReminderKey = `ack_reminder_${phone}_${paymentReminder?.id || 'reminder'}`;
+      await AsyncStorage.setItem(ackReminderKey, 'true');
+      setReminderModalVisible(false);
     } catch (error) {
-      setIssueModalVisible(false);
+      setReminderModalVisible(false);
     }
   };
 
@@ -464,8 +507,6 @@ const TenantPaymentScreen = () => {
     );
   }
 
-  const reminder = getReminderConfig();
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -491,14 +532,6 @@ const TenantPaymentScreen = () => {
                 <Text style={styles.propertyBadgeText}>{paymentData?.propertyName || 'Property'}</Text>
               </View>
               <View style={styles.headerActions}>
-                {ownerIssue && (
-                  <TouchableOpacity 
-                    style={[styles.scanBtn, { marginRight: 10, backgroundColor: '#EF4444' }]} 
-                    onPress={() => setIssueModalVisible(true)}
-                  >
-                    <Ionicons name="alert-circle" size={24} color="#FFF" />
-                  </TouchableOpacity>
-                )}
                 <TouchableOpacity style={styles.scanBtn} onPress={() => setQrModalVisible(true)}>
                   <Ionicons name="qr-code-outline" size={24} color="#FFF" />
                 </TouchableOpacity>
@@ -507,26 +540,41 @@ const TenantPaymentScreen = () => {
 
             <View style={styles.tenantSection}>
               {/* <Text style={styles.tenantName}>{paymentData?.tenantName || 'Tenant Name'}</Text> */}
-              <View style={styles.ownerContactRow}>
+             <View style={styles.ownerContactRow}>
                 <Text style={styles.ownerText}>Owner: {paymentData?.ownerName || 'Owner'}</Text>
                 {paymentData?.ownerPhone && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.copyPhoneBtn}
                     onPress={() => copyToClipboard(paymentData.ownerPhone)}
                   >
-                    <Ionicons name="call-outline" size={14} color="#FFF" />
+                    <Ionicons name="call" size={14} color="rgba(255, 255, 255, 0.9)" />
                     <Text style={styles.copyPhoneText}>{paymentData.ownerPhone}</Text>
-                    <Ionicons name="copy-outline" size={12} color="#FFF" style={{ marginLeft: 4 }} />
+                    {/* <Ionicons name="copy-outline" size={12} color="rgba(255, 255, 255, 0.6)" style={{ marginLeft: 6 }} /> */}
                   </TouchableOpacity>
                 )}
               </View>
             </View>
-
             <View style={styles.rentSection}>
-              <Text style={styles.rentLabel}>Monthly Rent</Text>
-              <View style={styles.amountContainer}>
-                <Text style={styles.currency}>₹</Text>
-                <Text style={styles.amount}>{paymentData?.rent?.toLocaleString() || '0'}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <View>
+                  <Text style={styles.rentLabel}>Monthly Rent</Text>
+                  <View style={styles.amountContainer}>
+                    <Text style={styles.currency}>₹</Text>
+                    <Text style={styles.amount}>{paymentData?.rent?.toLocaleString() || '0'}</Text>
+                  </View>
+                </View>
+               
+                {paymentData?.remaining_balance > 0 && (
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[styles.rentLabel, { color: '#FEE2E2' }]}>Remaining Balance</Text>
+                    <View style={styles.amountContainer}>
+                      <Text style={[styles.currency, { color: '#EF4444' }]}>₹</Text>
+                      <Text style={[styles.amount, { color: '#EF4444', fontSize: 28 }]}>
+                        {paymentData.remaining_balance.toLocaleString()}
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -542,35 +590,40 @@ const TenantPaymentScreen = () => {
           </LinearGradient>
         </Animated.View>
 
-        {/* 2. Dynamic Reminder Alert Card */}
-        {reminder && (
-          <Animated.View style={[styles.reminderCard, { 
-            borderColor: reminder.borderColor, 
-            backgroundColor: reminder.color,
-            opacity: fadeAnim 
-          }]}>
-            <Ionicons name={reminder.icon} size={24} color={reminder.iconColor} />
-            <View style={styles.reminderContent}>
-              <Text style={[styles.reminderTitle, { color: reminder.iconColor }]}>{reminder.title}</Text>
-              <Text style={styles.reminderMessage}>{reminder.message}</Text>
+        {/* Unified Owner Action & Reminder Card */}
+        {paymentReminder && (
+          <TouchableOpacity 
+            style={styles.actionRequestCard} 
+            onPress={() => setReminderModalVisible(true)}
+          >
+            <View style={[styles.actionIconCircle, { backgroundColor: paymentReminder.type === 'rejection' ? '#EF4444' : '#6366F1' }]}>
+              <Ionicons name={paymentReminder.type === 'rejection' ? "alert-circle" : "notifications"} size={24} color="#FFF" />
+              <View style={styles.actionBadge} />
             </View>
-          </Animated.View>
+            <View style={styles.actionTextContent}>
+              <Text style={styles.actionTitle}>{paymentReminder.title}</Text>
+              <View style={styles.actionDetailsRow}>
+                {paymentReminder.pendingAmount !== undefined && (
+                  <View style={styles.actionDetailItem}>
+                    <Text style={styles.actionDetailLabel}>{t('amount') || 'Amount'}:</Text>
+                    <Text style={[styles.actionDetailValue, { color: '#EF4444' }]}>₹{paymentReminder.pendingAmount}</Text>
+                  </View>
+                )}
+                {paymentReminder.dueDate && (
+                  <View style={styles.actionDetailItem}>
+                    <Text style={styles.actionDetailLabel}>{t('due') || 'Due'}:</Text>
+                    <Text style={styles.actionDetailValue}>{paymentReminder.dueDate}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.actionSubtitle} numberOfLines={1}>{paymentReminder.message}</Text>
+            </View>
+            <View style={styles.actionButton}>
+              <Text style={styles.actionButtonText}>{t('view') || 'View'}</Text>
+              <Ionicons name="chevron-forward" size={16} color="#6366F1" />
+            </View>
+          </TouchableOpacity>
         )}
-
-        {/* 2.5 Payment Status Message */}
-        <View style={styles.statusMessageContainer}>
-           <View style={[styles.statusIconCircle, { backgroundColor: getPaymentAccessibility().enabled ? '#DBEAFE' : (paymentData?.status === 'Verifying' ? '#EEF2FF' : '#DCFCE7') }]}>
-              <Ionicons 
-                name={getPaymentAccessibility().enabled ? "information-circle" : (paymentData?.status === 'Verifying' ? "time" : "checkmark-done-circle")} 
-                size={24} 
-                color={getPaymentAccessibility().enabled ? "#3B82F6" : (paymentData?.status === 'Verifying' ? "#6366F1" : "#22C55E")} 
-              />
-           </View>
-           <View style={styles.statusMessageTextContent}>
-              <Text style={styles.statusMessageTitle}>{getPaymentAccessibility().message}</Text>
-              <Text style={styles.statusMessageSub}>{getPaymentAccessibility().subMessage}</Text>
-           </View>
-        </View>
 
         {/* Tab Switcher */}
         {getPaymentAccessibility().enabled && (
@@ -759,10 +812,18 @@ const TenantPaymentScreen = () => {
               </TouchableOpacity>
             </View>
             <View style={styles.qrWrapper}>
-              <QRCode
-                value={`upi://pay?pa=${paymentData?.upiId || ''}&pn=${encodeURIComponent(paymentData?.ownerName || '')}&am=${paymentData?.rent || '0'}&cu=INR`}
-                size={220}
-              />
+              {paymentData?.qrCode ? (
+                <Image 
+                  source={{ uri: paymentData.qrCode }} 
+                  style={styles.uploadedQr}
+                  resizeMode="contain"
+                />
+              ) : (
+                <QRCode
+                  value={`upi://pay?pa=${paymentData?.upiId || ''}&pn=${encodeURIComponent(paymentData?.ownerName || '')}&am=${paymentData?.rent || '0'}&cu=INR`}
+                  size={220}
+                />
+              )}
             </View>
             <Text style={styles.qrName}>{paymentData?.ownerName || 'Property Owner'}</Text>
             <Text style={styles.qrUpi}>{paymentData?.upiId || 'No UPI ID'}</Text>
@@ -773,28 +834,49 @@ const TenantPaymentScreen = () => {
         </View>
       </Modal>
 
-      {/* Owner Issue Modal */}
-      <Modal visible={issueModalVisible} transparent animationType="fade">
+      {/* Payment Reminder Modal */}
+      <Modal visible={reminderModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.issueModalContent}>
             <LinearGradient
-              colors={['#EF4444', '#DC2626']}
+              colors={paymentReminder?.type === 'rejection' ? ['#EF4444', '#DC2626'] : ['#6366F1', '#4F46E5']}
               style={styles.issueHeaderGradient}
             >
-              <Ionicons name="alert-circle" size={48} color="#FFF" />
-              <Text style={styles.issueModalTitle}>{t("issue from owner") || "Issue from Owner"}</Text>
+              <Ionicons 
+                name={paymentReminder?.type === 'rejection' ? "alert-circle" : "notifications"} 
+                size={48} 
+                color="#FFF" 
+              />
+              <Text style={styles.issueModalTitle}>{paymentReminder?.title || t("reminder from owner") || "Reminder from Owner"}</Text>
             </LinearGradient>
             
             <View style={styles.issueBody}>
-              <Text style={styles.issueText}>{ownerIssue?.message || t("issue message") || "The owner has raised an issue regarding your payment or stay. Please check the details below."}</Text>
+              <Text style={styles.issueText}>{paymentReminder?.message}</Text>
               
-              {ownerIssue?.details && (
+              <View style={styles.issueInfoGrid}>
+                {paymentReminder?.pendingAmount !== undefined && (
+                  <View style={styles.issueInfoItem}>
+                    <Text style={styles.issueInfoLabel}>{t('pending_amount') || 'Pending Amount'}</Text>
+                    <Text style={[styles.issueInfoValue, { color: '#EF4444' }]}>₹{paymentReminder.pendingAmount}</Text>
+                  </View>
+                )}
+                
+                {paymentReminder?.dueDate && (
+                  <View style={styles.issueInfoItem}>
+                    <Text style={styles.issueInfoLabel}>{t('due_date') || 'Due Date'}</Text>
+                    <Text style={styles.issueInfoValue}>{paymentReminder.dueDate}</Text>
+                  </View>
+                )}
+              </View>
+
+              {paymentReminder?.details && (
                 <View style={styles.issueDetailsBox}>
-                  <Text style={styles.issueDetailsText}>{ownerIssue.details}</Text>
+                  <Text style={styles.issueDetailsLabel}>{paymentReminder?.type === 'rejection' ? t('rejection_reason') : t('description')}:</Text>
+                  <Text style={styles.issueDetailsText}>{paymentReminder.details}</Text>
                 </View>
               )}
 
-              <TouchableOpacity style={styles.issueCloseBtn} onPress={handleAcknowledgeIssue}>
+              <TouchableOpacity style={styles.issueCloseBtn} onPress={handleAcknowledgeReminder}>
                 <Text style={styles.issueCloseBtnText}>{t("i understand") || "I Understand"}</Text>
               </TouchableOpacity>
             </View>
@@ -836,20 +918,15 @@ const styles = StyleSheet.create({
   scanBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.2)', justifyContent: 'center', alignItems: 'center' },
   tenantSection: { marginTop: 16 },
   tenantName: { fontSize: 22, fontWeight: 'bold', color: '#FFF' },
-  ownerContactRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, flexWrap: 'wrap' },
-  ownerText: { fontSize: 14, color: 'rgba(255, 255, 255, 0.8)' },
-  copyPhoneBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', 
-    paddingHorizontal: 10, 
-    paddingVertical: 4, 
-    borderRadius: 12,
-    marginLeft: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)'
+  ownerContactRow: { marginTop: 8 },
+  ownerText: { fontSize: 15, fontWeight: '600', color: '#FFF' },
+  copyPhoneBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
   },
-  copyPhoneText: { color: '#FFF', fontSize: 13, fontWeight: '700', marginLeft: 4 },
+  copyPhoneText: { color: 'rgba(255, 255, 255, 0.9)', fontSize: 14, fontWeight: '500', marginLeft: 6 },
+ 
   rentSection: { marginTop: 16 },
   rentLabel: { color: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
   amountContainer: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 2 },
@@ -861,10 +938,88 @@ const styles = StyleSheet.create({
   footerValue: { color: '#FFF', fontSize: 15, fontWeight: '700', marginTop: 2 },
   statusBadge: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' },
   statusText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-  reminderCard: { flexDirection: 'row', marginHorizontal: 16, padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 20, alignItems: 'center' },
-  reminderContent: { marginLeft: 12, flex: 1 },
-  reminderTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 2 },
-  reminderMessage: { fontSize: 13, color: '#475569', lineHeight: 18 },
+  actionRequestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    marginHorizontal: 16,
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  actionIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    position: 'relative',
+  },
+  actionBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#EF4444',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  actionTextContent: {
+    flex: 1,
+  },
+  actionTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  actionSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  actionDetailsRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+    gap: 12,
+  },
+  actionDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionDetailLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  actionDetailValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6366F1',
+    marginRight: 4,
+  },
   tabContainer: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: '#FFF', borderRadius: 16, padding: 6, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, marginBottom: 16 },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12 },
   activeTab: { backgroundColor: '#F0F7FF', borderWidth: 1, borderColor: '#4F46E5' },
@@ -954,7 +1109,8 @@ const styles = StyleSheet.create({
   modalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 32, padding: 32, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 24 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1E293B' },
-  qrWrapper: { padding: 20, backgroundColor: '#F8FAFC', borderRadius: 24, borderWidth: 1, borderColor: '#F1F5F9' },
+  qrWrapper: { padding: 20, backgroundColor: '#F8FAFC', borderRadius: 24, borderWidth: 1, borderColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  uploadedQr: { width: 250, height: 350, borderRadius: 12 },
   qrName: { fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginTop: 20 },
   qrUpi: { fontSize: 14, color: '#64748B', marginTop: 6 },
   closeBtn: { marginTop: 24, backgroundColor: '#F1F5F9', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 16 },
@@ -990,12 +1146,77 @@ const styles = StyleSheet.create({
     issueModalTitle: { fontSize: 22, fontWeight: 'bold', color: '#FFF' },
     issueBody: { padding: 24 },
     issueText: { fontSize: 16, color: '#1E293B', textAlign: 'center', lineHeight: 24, marginBottom: 20 },
+    issueInfoGrid: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 16 },
+    issueInfoItem: { alignItems: 'center' },
+    issueInfoLabel: { fontSize: 11, color: '#64748B', textTransform: 'uppercase', fontWeight: '600', marginBottom: 4 },
+    issueInfoValue: { fontSize: 15, fontWeight: 'bold', color: '#1E293B' },
     issueDetailsBox: { backgroundColor: '#FEF2F2', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#FEE2E2', marginBottom: 24 },
+    issueDetailsLabel: { fontSize: 12, fontWeight: '700', color: '#991B1B', marginBottom: 4, textTransform: 'uppercase' },
     issueDetailsText: { fontSize: 14, color: '#991B1B', lineHeight: 20 },
     issueCloseBtn: { backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
     issueCloseBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+    actionRequestCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#FFF',
+      marginHorizontal: 16,
+      padding: 16,
+      borderRadius: 20,
+      marginBottom: 16,
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowRadius: 10,
+      elevation: 2,
+      borderWidth: 1,
+      borderColor: '#F1F5F9',
+    },
+    actionIconCircle: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 12,
+      position: 'relative',
+    },
+    actionBadge: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: '#EF4444',
+      borderWidth: 2,
+      borderColor: '#FFF',
+    },
+    actionTextContent: {
+      flex: 1,
+    },
+    actionTitle: {
+      fontSize: 15,
+      fontWeight: 'bold',
+      color: '#1E293B',
+    },
+    actionSubtitle: {
+      fontSize: 13,
+      color: '#64748B',
+      marginTop: 2,
+    },
+    actionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#EEF2FF',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 12,
+    },
+    actionButtonText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: '#6366F1',
+      marginRight: 4,
+    },
   });
 
 export default TenantPaymentScreen;
-
-
