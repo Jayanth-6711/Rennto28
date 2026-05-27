@@ -49,6 +49,121 @@ import COLORS from "../../theme/colors";
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width - 40;
 
+// Map of canonical city name → list of all accepted aliases/typos
+const CITY_ALIASES = {
+  hyderabad: [
+    "hyderabad", "hyderabd", "hyderad", "hydrabad", "hydarabad",
+    "hyderbaad", "hiderabad", "hyd"
+  ],
+  bengaluru: [
+    "bengaluru", "bangalore", "banglore", "banglor", "benglor",
+    "bangalor", "bengalore", "blr"
+  ],
+  mumbai: ["mumbai", "bombay", "mumbai", "mumbay", "bomby", "bom"],
+  delhi: ["delhi", "new delhi", "newdelhi", "nd", "dilli"],
+  chennai: ["chennai", "madras", "chenai", "madras"],
+  kolkata: ["kolkata", "calcutta", "kolkatta", "kolkota", "cal"],
+  pune: ["pune", "poona", "puna"],
+  ahmedabad: ["ahmedabad", "ahemdabad", "ahmadabad", "amdavad"],
+  jaipur: ["jaipur", "jaipure", "jaypur"],
+  surat: ["surat"],
+  lucknow: ["lucknow", "lko"],
+  kanpur: ["kanpur", "cawnpore"],
+  nagpur: ["nagpur", "nagpure"],
+  visakhapatnam: ["visakhapatnam", "vizag", "vishakhapatnam", "visakhapatanam"],
+  bhopal: ["bhopal"],
+  indore: ["indore"],
+  patna: ["patna"],
+  vadodara: ["vadodara", "baroda"],
+  coimbatore: ["coimbatore", "coimbatur", "covai"],
+  kochi: ["kochi", "cochin", "ernakulam"],
+  thiruvananthapuram: ["thiruvananthapuram", "trivandrum", "tvm"],
+  guwahati: ["guwahati", "gauhati"],
+  chandigarh: ["chandigarh", "chd"],
+  bhubaneswar: ["bhubaneswar", "bhubaneshwar", "bbsr"],
+  dehradun: ["dehradun", "ddn"],
+  noida: ["noida"],
+  gurugram: ["gurugram", "gurgaon", "grg"],
+  faridabad: ["faridabad"],
+  agra: ["agra"],
+  varanasi: ["varanasi", "banaras", "benares", "kashi"],
+  mysuru: ["mysuru", "mysore"],
+  mangaluru: ["mangaluru", "mangalore"],
+  hubli: ["hubli", "hubballi"],
+  belagavi: ["belagavi", "belgaum"],
+  vijayawada: ["vijayawada", "vijayavada", "bezawada"],
+  tirupati: ["tirupati", "tirupathi"],
+  warangal: ["warangal"],
+  nellore: ["nellore"],
+  guntur: ["guntur"],
+  rajahmundry: ["rajahmundry", "rajamahendravaram"],
+};
+
+// Neighborhood → canonical city mapping
+const NEIGHBORHOOD_CITY_MAP = {
+  // Hyderabad
+  "durgam charuvu": "hyderabad", "durgam cheruvu": "hyderabad",
+  "hitec city": "hyderabad", "hitech city": "hyderabad",
+  "madhapur": "hyderabad", "gachibowli": "hyderabad",
+  "kondapur": "hyderabad", "kukatpally": "hyderabad",
+  "secunderabad": "hyderabad", "jubilee hills": "hyderabad",
+  "banjara hills": "hyderabad", "ameerpet": "hyderabad",
+  "charminar": "hyderabad", "miyapur": "hyderabad",
+  "begumpet": "hyderabad", "dilshuknagar": "hyderabad",
+  "lb nagar": "hyderabad", "uppal": "hyderabad",
+  "kphb": "hyderabad", "nallagandla": "hyderabad",
+  "narsingi": "hyderabad", "manikonda": "hyderabad",
+  // Bangalore
+  "whitefield": "bengaluru", "marathahalli": "bengaluru",
+  "indiranagar": "bengaluru", "koramangala": "bengaluru",
+  "jayanagar": "bengaluru", "electronic city": "bengaluru",
+  "hebbal": "bengaluru", "byatarayanapura": "bengaluru",
+  "yelahanka": "bengaluru", "banashankari": "bengaluru",
+  "jp nagar": "bengaluru", "hsr layout": "bengaluru",
+  "sarjapur": "bengaluru", "bellandur": "bengaluru",
+  "btm layout": "bengaluru", "rajajinagar": "bengaluru",
+  "malleshwaram": "bengaluru", "sadashivanagar": "bengaluru",
+  // Mumbai
+  "andheri": "mumbai", "bandra": "mumbai", "dadar": "mumbai",
+  "borivali": "mumbai", "thane": "mumbai", "navi mumbai": "mumbai",
+  "kurla": "mumbai", "juhu": "mumbai", "powai": "mumbai",
+  // Delhi / NCR
+  "connaught place": "delhi", "lajpat nagar": "delhi",
+  "rohini": "delhi", "dwarka": "delhi", "saket": "delhi",
+  "hauz khas": "delhi",
+  // Chennai
+  "t nagar": "chennai", "adyar": "chennai", "anna nagar": "chennai",
+  "velachery": "chennai", "porur": "chennai", "omr": "chennai",
+  // Pune
+  "hinjewadi": "pune", "baner": "pune", "kothrud": "pune",
+  "hadapsar": "pune", "wakad": "pune", "viman nagar": "pune",
+};
+
+const normalizeSearchText = (text, isSearchableText = false) => {
+  if (!text) return "";
+  let t = text.toLowerCase();
+
+  // Step 1: Normalize all city aliases → canonical city name
+  for (const [canonical, aliases] of Object.entries(CITY_ALIASES)) {
+    for (const alias of aliases) {
+      if (t.includes(alias)) {
+        t = t.split(alias).join(canonical);
+      }
+    }
+  }
+
+  // Step 2: For address/property text, enrich with city name if only neighborhood is present
+  if (isSearchableText) {
+    for (const [neighborhood, city] of Object.entries(NEIGHBORHOOD_CITY_MAP)) {
+      if (t.includes(neighborhood) && !t.includes(city)) {
+        t += " " + city;
+      }
+    }
+  }
+
+  return t;
+};
+
 
 const categories = [
   { id: "1", name: "All", icon: "grid-outline" },
@@ -69,6 +184,7 @@ export default function TenantHomeScreen({ route }) {
 
   const [nearMe, setNearMe] = useState(0);
   const [userCoords, setUserCoords] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const [selectedProperty, setSelectedProperty] = useState(null);
   const bookingContext = useContext(BookingContext);
@@ -164,6 +280,9 @@ export default function TenantHomeScreen({ route }) {
 
   const fetchProperties = async () => {
     try {
+      
+      setLoading(true);
+
       console.log("Fetching properties...");
 
       const response = await fetchWithAuth(`${BASE_URL}/api/owner_props/`);
@@ -254,6 +373,11 @@ export default function TenantHomeScreen({ route }) {
     } catch (error) {
       console.log("Fetch Properties Error:", error);
     }
+    finally {
+
+    setLoading(false);
+
+  }
   };
 
 
@@ -276,6 +400,20 @@ export default function TenantHomeScreen({ route }) {
       fetchTenantRequests();
     }, [tenantEmail])
   );
+
+  useEffect(() => {
+  fetchProperties();
+}, [
+  mainSearch,
+  selectedType,
+  nearMe,
+  selectedFacilities,
+  selectedHostelType,
+  selectedTenantType,
+  selectedCommercialFeature,
+  userCoords
+]);
+
   useEffect(() => {
     if (route?.params?.property) {
       navigation.navigate("PropertyDetailsScreen", { property: route.params.property });
@@ -392,14 +530,9 @@ export default function TenantHomeScreen({ route }) {
   // Updated Filtering Logic
   const filteredProperties = allProperties.filter((item) => {
 
-    // 1. Search
-    const q = mainSearch.toLowerCase().trim();
+    const searchText = normalizeSearchText(mainSearch.trim(), false);
 
-    const searchText = q
-      .trim()
-      .toLowerCase();
-
-    const searchableText = `
+    const searchableText = normalizeSearchText(`
   ${item.name || ""}
   ${item.address || ""}
   ${item.type || ""}
@@ -408,8 +541,7 @@ export default function TenantHomeScreen({ route }) {
   ${item.commercialType || ""}
   ${item.officeType || ""}
   ${(item.facilities || []).join(" ")}
-`
-      .toLowerCase()
+`, true)
       .replace(/,/g, " ")
       .replace(/\s+/g, " ");
 
@@ -528,6 +660,8 @@ export default function TenantHomeScreen({ route }) {
 
     // 2. SECONDARY: NEARBY PROPERTIES (DISTANCE)
     if (userCoords) {
+       if (!a.latitude || !a.longitude) return 1;
+       if (!b.latitude || !b.longitude) return -1;
       const distA = getDistance(userCoords.latitude, userCoords.longitude, a.latitude, a.longitude);
       const distB = getDistance(userCoords.latitude, userCoords.longitude, b.latitude, b.longitude);
       return distA - distB;
@@ -3359,10 +3493,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "bold",
   },
-
-
-
-
-
-
 });
+

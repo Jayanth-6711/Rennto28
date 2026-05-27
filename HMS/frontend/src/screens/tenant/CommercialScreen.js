@@ -23,6 +23,80 @@ import { BookingContext } from "@/src/context/BookingContext";
 
 const { width } = Dimensions.get("window");
 
+const CITY_ALIASES = {
+  hyderabad: ["hyderabad","hyderabd","hyderad","hydrabad","hydarabad","hyderbaad","hiderabad","hyd"],
+  bengaluru: ["bengaluru","bangalore","banglore","banglor","benglor","bangalor","bengalore","blr"],
+  mumbai: ["mumbai","bombay","mumbay","bomby","bom"],
+  delhi: ["delhi","new delhi","newdelhi","nd","dilli"],
+  chennai: ["chennai","madras","chenai"],
+  kolkata: ["kolkata","calcutta","kolkatta","kolkota","cal"],
+  pune: ["pune","poona","puna"],
+  ahmedabad: ["ahmedabad","ahemdabad","ahmadabad","amdavad"],
+  jaipur: ["jaipur","jaipure","jaypur"],
+  surat: ["surat"],
+  lucknow: ["lucknow","lko"],
+  nagpur: ["nagpur","nagpure"],
+  visakhapatnam: ["visakhapatnam","vizag","vishakhapatnam","visakhapatanam"],
+  bhopal: ["bhopal"],
+  indore: ["indore"],
+  vadodara: ["vadodara","baroda"],
+  coimbatore: ["coimbatore","coimbatur","covai"],
+  kochi: ["kochi","cochin","ernakulam"],
+  thiruvananthapuram: ["thiruvananthapuram","trivandrum","tvm"],
+  chandigarh: ["chandigarh","chd"],
+  noida: ["noida"],
+  gurugram: ["gurugram","gurgaon","grg"],
+  varanasi: ["varanasi","banaras","benares","kashi"],
+  mysuru: ["mysuru","mysore"],
+  mangaluru: ["mangaluru","mangalore"],
+  hubli: ["hubli","hubballi"],
+  belagavi: ["belagavi","belgaum"],
+  vijayawada: ["vijayawada","vijayavada","bezawada"],
+  tirupati: ["tirupati","tirupathi"],
+  warangal: ["warangal"],
+  nellore: ["nellore"],
+  guntur: ["guntur"],
+};
+
+const NEIGHBORHOOD_CITY_MAP = {
+  "durgam charuvu":"hyderabad","durgam cheruvu":"hyderabad","hitec city":"hyderabad","hitech city":"hyderabad",
+  "madhapur":"hyderabad","gachibowli":"hyderabad","kondapur":"hyderabad","kukatpally":"hyderabad",
+  "secunderabad":"hyderabad","jubilee hills":"hyderabad","banjara hills":"hyderabad","ameerpet":"hyderabad",
+  "charminar":"hyderabad","miyapur":"hyderabad","begumpet":"hyderabad","dilshuknagar":"hyderabad",
+  "lb nagar":"hyderabad","uppal":"hyderabad","kphb":"hyderabad","manikonda":"hyderabad",
+  "whitefield":"bengaluru","marathahalli":"bengaluru","indiranagar":"bengaluru","koramangala":"bengaluru",
+  "jayanagar":"bengaluru","electronic city":"bengaluru","hebbal":"bengaluru","byatarayanapura":"bengaluru",
+  "yelahanka":"bengaluru","banashankari":"bengaluru","jp nagar":"bengaluru","hsr layout":"bengaluru",
+  "sarjapur":"bengaluru","bellandur":"bengaluru","btm layout":"bengaluru","malleshwaram":"bengaluru",
+  "andheri":"mumbai","bandra":"mumbai","dadar":"mumbai","borivali":"mumbai","powai":"mumbai","juhu":"mumbai",
+  "connaught place":"delhi","lajpat nagar":"delhi","rohini":"delhi","dwarka":"delhi","hauz khas":"delhi",
+  "t nagar":"chennai","adyar":"chennai","anna nagar":"chennai","velachery":"chennai","porur":"chennai",
+  "hinjewadi":"pune","baner":"pune","kothrud":"pune","hadapsar":"pune","wakad":"pune","viman nagar":"pune",
+};
+
+const normalizeSearchText = (text, isSearchableText = false) => {
+  if (!text) return "";
+  let t = text.toLowerCase();
+
+  for (const [canonical, aliases] of Object.entries(CITY_ALIASES)) {
+    for (const alias of aliases) {
+      if (t.includes(alias)) {
+        t = t.split(alias).join(canonical);
+      }
+    }
+  }
+
+  if (isSearchableText) {
+    for (const [neighborhood, city] of Object.entries(NEIGHBORHOOD_CITY_MAP)) {
+      if (t.includes(neighborhood) && !t.includes(city)) {
+        t += " " + city;
+      }
+    }
+  }
+
+  return t;
+};
+
 export default function CommercialScreen() {
   const navigation = useNavigation();
   const [search, setSearch] = useState("");
@@ -178,17 +252,14 @@ const getUserLocation = async () => {
 const filteredCommercial =
   properties.filter((h) => {
 
-    const searchText = search
-  .trim()
-  .toLowerCase();
+    const searchText = normalizeSearchText(search.trim(), false);
 
-const searchableText = `
+const searchableText = normalizeSearchText(`
   ${h.name || ""}
   ${h.address || ""}
   ${h.category || ""}
   ${(h.facilities || []).join(" ")}
-`
-  .toLowerCase()
+`, true)
   .replace(/,/g, " ")
   .replace(/\s+/g, " ");
 

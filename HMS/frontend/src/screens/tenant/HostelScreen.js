@@ -12,6 +12,7 @@ import {
   SafeAreaView,
   StatusBar,
   Modal,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,6 +25,96 @@ import { BookingContext } from "@/src/context/BookingContext";
 
 const { width } = Dimensions.get("window");
 
+const CITY_ALIASES = {
+  hyderabad: ["hyderabad","hyderabd","hyderad","hydrabad","hydarabad","hyderbaad","hiderabad","hyd"],
+  bengaluru: ["bengaluru","bangalore","banglore","banglor","benglor","bangalor","bengalore","blr"],
+  mumbai: ["mumbai","bombay","mumbay","bomby","bom"],
+  delhi: ["delhi","new delhi","newdelhi","nd","dilli"],
+  chennai: ["chennai","madras","chenai"],
+  kolkata: ["kolkata","calcutta","kolkatta","kolkota","cal"],
+  pune: ["pune","poona","puna"],
+  ahmedabad: ["ahmedabad","ahemdabad","ahmadabad","amdavad"],
+  jaipur: ["jaipur","jaipure","jaypur"],
+  surat: ["surat"],
+  lucknow: ["lucknow","lko"],
+  nagpur: ["nagpur","nagpure"],
+  visakhapatnam: ["visakhapatnam","vizag","vishakhapatnam","visakhapatanam"],
+  bhopal: ["bhopal"],
+  indore: ["indore"],
+  vadodara: ["vadodara","baroda"],
+  coimbatore: ["coimbatore","coimbatur","covai"],
+  kochi: ["kochi","cochin","ernakulam"],
+  thiruvananthapuram: ["thiruvananthapuram","trivandrum","tvm"],
+  chandigarh: ["chandigarh","chd"],
+  noida: ["noida"],
+  gurugram: ["gurugram","gurgaon","grg"],
+  varanasi: ["varanasi","banaras","benares","kashi"],
+  mysuru: ["mysuru","mysore"],
+  mangaluru: ["mangaluru","mangalore"],
+  hubli: ["hubli","hubballi"],
+  belagavi: ["belagavi","belgaum"],
+  vijayawada: ["vijayawada","vijayavada","bezawada"],
+  tirupati: ["tirupati","tirupathi"],
+  warangal: ["warangal"],
+  nellore: ["nellore"],
+  guntur: ["guntur"],
+};
+
+const NEIGHBORHOOD_CITY_MAP = {
+  "durgam charuvu":"hyderabad","durgam cheruvu":"hyderabad","hitec city":"hyderabad","hitech city":"hyderabad",
+  "madhapur":"hyderabad","gachibowli":"hyderabad","kondapur":"hyderabad","kukatpally":"hyderabad",
+  "secunderabad":"hyderabad","jubilee hills":"hyderabad","banjara hills":"hyderabad","ameerpet":"hyderabad",
+  "charminar":"hyderabad","miyapur":"hyderabad","begumpet":"hyderabad","dilshuknagar":"hyderabad",
+  "lb nagar":"hyderabad","uppal":"hyderabad","kphb":"hyderabad","manikonda":"hyderabad",
+  "whitefield":"bengaluru","marathahalli":"bengaluru","indiranagar":"bengaluru","koramangala":"bengaluru",
+  "jayanagar":"bengaluru","electronic city":"bengaluru","hebbal":"bengaluru","byatarayanapura":"bengaluru",
+  "yelahanka":"bengaluru","banashankari":"bengaluru","jp nagar":"bengaluru","hsr layout":"bengaluru",
+  "sarjapur":"bengaluru","bellandur":"bengaluru","btm layout":"bengaluru","malleshwaram":"bengaluru",
+  "andheri":"mumbai","bandra":"mumbai","dadar":"mumbai","borivali":"mumbai","powai":"mumbai","juhu":"mumbai",
+  "connaught place":"delhi","lajpat nagar":"delhi","rohini":"delhi","dwarka":"delhi","hauz khas":"delhi",
+  "t nagar":"chennai","adyar":"chennai","anna nagar":"chennai","velachery":"chennai","porur":"chennai",
+  "hinjewadi":"pune","baner":"pune","kothrud":"pune","hadapsar":"pune","wakad":"pune","viman nagar":"pune",
+};
+
+// For the search QUERY: if user typed a prefix of a known city alias, resolve to canonical
+const resolveQueryCity = (query) => {
+  const q = query.toLowerCase().trim();
+  if (!q || q.length < 2) return q;
+  for (const [canonical, aliases] of Object.entries(CITY_ALIASES)) {
+    for (const alias of aliases) {
+      // Exact match OR alias starts with what user typed (prefix match)
+      if (alias === q || alias.startsWith(q) || q === canonical) {
+        return canonical;
+      }
+    }
+  }
+  return q;
+};
+
+const normalizeSearchText = (text, isSearchableText = false) => {
+  if (!text) return "";
+  let t = text.toLowerCase();
+
+  for (const [canonical, aliases] of Object.entries(CITY_ALIASES)) {
+    for (const alias of aliases) {
+      if (t.includes(alias)) {
+        t = t.split(alias).join(canonical);
+      }
+    }
+  }
+
+  if (isSearchableText) {
+    for (const [neighborhood, city] of Object.entries(NEIGHBORHOOD_CITY_MAP)) {
+      if (t.includes(neighborhood) && !t.includes(city)) {
+        t += " " + city;
+      }
+    }
+  }
+
+  return t;
+};
+
+
 export default function HostelScreen() {
   const navigation = useNavigation();
   const [search, setSearch] = useState("");
@@ -33,6 +124,7 @@ const [selectedHostelType, setSelectedHostelType] = useState("");
 
 const [selectedFacilities, setSelectedFacilities] = useState([]);
 
+const [loading, setLoading] = useState(false);
 const [nearBy, setNearBy] = useState(0);
 const [userCoords, setUserCoords] =
   useState(null);
@@ -74,6 +166,7 @@ const getUserLocation = async () => {
 
   const fetchHostels = async () => {
     try {
+      setLoading(true);
       const response = await fetchWithAuth(`${BASE_URL}/api/owner_props/`);
       const result = await response.json();
       const MEDIA_URL = `${BASE_URL}/media/`;
@@ -124,6 +217,11 @@ const getUserLocation = async () => {
     } catch (error) {
       console.log("Fetch Hostels Error:", error);
     }
+    finally {
+
+    setLoading(false);
+
+  }
   };
   const getDistance = (
   lat1,
@@ -172,24 +270,27 @@ h.longitude != null &&
     ) <= nearBy
   );
 
-const searchText = search
-  .trim()
-  .toLowerCase();
+const rawSearch = search.trim();
+// First try to resolve query as a city alias/prefix, then fall through to normal normalize
+const resolvedCity = resolveQueryCity(rawSearch);
+const searchText = resolvedCity !== rawSearch.toLowerCase().trim()
+  ? resolvedCity
+  : normalizeSearchText(rawSearch, false);
 
-const searchableText = `
+const searchableText = normalizeSearchText(`
   ${h.name || ""}
   ${h.address || ""}
   ${h.hostelType || ""}
   ${(h.facilities || []).join(" ")}
-`
-  .toLowerCase()
+`, true)
   .replace(/,/g, " ")
   .replace(/\s+/g, " ");
 
 const matchesSearch =
-  searchText === "" ||
-  
-  searchableText.includes(searchText);
+  rawSearch === "" ||
+  searchableText.includes(searchText) ||
+  // Fallback: direct substring match on lowercased text (catches hostel names etc.)
+  searchableText.includes(rawSearch.toLowerCase());
 
   const matchesHostelType =
     selectedHostelType === "" ||
@@ -270,40 +371,55 @@ matchesNearBy
         <View style={styles.content}>
           <Text style={styles.sectionTitle}>Popular Hostels</Text>
 
-          {filteredHostels.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.card}
-              onPress={() => navigation.navigate("PropertyDetailsScreen", { property: item })}
+          {loading ? (
+            <View
+              style={{
+                alignItems: "center",
+                marginTop: 50,
+                paddingBottom: 50,
+              }}
             >
-              <Image source={{ uri: item.image || item.galleryImages?.[0] }} style={styles.cardImage} />
-              <View style={styles.cardDetails}>
-                <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.cardAddress} numberOfLines={1}>{shortenAddress(item.address)}</Text>
-
-                
-
-                <View style={styles.tagRow}>
-                  {item.facilities.slice(0, 3).map((fac, idx) => (
-                    <View key={idx} style={styles.tag}>
-                      <Text style={styles.tagText}>{fac}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceText}>₹{item.price}</Text>
-                  <Text style={styles.pricePeriod}>/month</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          {filteredHostels.length === 0 && (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={60} color="#ccc" />
-              <Text style={styles.emptyText}>No hostels found</Text>
+              <ActivityIndicator
+                size="large"
+                color={COLORS.PRIMARY}
+              />
             </View>
+          ) : (
+            <>
+              {filteredHostels.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.card}
+                  onPress={() => navigation.navigate("PropertyDetailsScreen", { property: item })}
+                >
+                  <Image source={{ uri: item.image || item.galleryImages?.[0] }} style={styles.cardImage} />
+                  <View style={styles.cardDetails}>
+                    <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.cardAddress} numberOfLines={1}>{shortenAddress(item.address)}</Text>
+
+                    <View style={styles.tagRow}>
+                      {item.facilities.slice(0, 3).map((fac, idx) => (
+                        <View key={idx} style={styles.tag}>
+                          <Text style={styles.tagText}>{fac}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceText}>₹{item.price}</Text>
+                      <Text style={styles.pricePeriod}>/month</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+
+              {filteredHostels.length === 0 && (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="search-outline" size={60} color="#ccc" />
+                  <Text style={styles.emptyText}>No hostels found</Text>
+                </View>
+              )}
+            </>
           )}
         </View>
       </ScrollView>
