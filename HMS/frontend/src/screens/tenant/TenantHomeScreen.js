@@ -280,7 +280,7 @@ export default function TenantHomeScreen({ route }) {
 
   const fetchProperties = async () => {
     try {
-      
+
       setLoading(true);
 
       console.log("Fetching properties...");
@@ -376,9 +376,9 @@ export default function TenantHomeScreen({ route }) {
     }
     finally {
 
-    setLoading(false);
+      setLoading(false);
 
-  }
+    }
   };
 
 
@@ -403,17 +403,17 @@ export default function TenantHomeScreen({ route }) {
   );
 
   useEffect(() => {
-  fetchProperties();
-}, [
-  mainSearch,
-  selectedType,
-  nearMe,
-  selectedFacilities,
-  selectedHostelType,
-  selectedTenantType,
-  selectedCommercialFeature,
-  userCoords
-]);
+    fetchProperties();
+  }, [
+    mainSearch,
+    selectedType,
+    nearMe,
+    selectedFacilities,
+    selectedHostelType,
+    selectedTenantType,
+    selectedCommercialFeature,
+    userCoords
+  ]);
 
   useEffect(() => {
     if (route?.params?.property) {
@@ -646,23 +646,23 @@ export default function TenantHomeScreen({ route }) {
     // 1. PRIORITY: ACCEPTED PROPERTIES
     const latestA = requests.find(r =>
       normalize(r.propertyName || r.property_name) === normalize(a.name) &&
-      normalize(r.contact || r.owner_phone) === normalize(a.contact)
+      normalize(r.owner_phone) === normalize(a.ownerPhone)
     );
-    const isAcceptedA = latestA?.status === "accepted";
+    const isAcceptedA = latestA?.status === "accepted" || latestA?.status === "completed";
 
     const latestB = requests.find(r =>
       normalize(r.propertyName || r.property_name) === normalize(b.name) &&
-      normalize(r.contact || r.owner_phone) === normalize(b.contact)
+      normalize(r.owner_phone) === normalize(b.ownerPhone)
     );
-    const isAcceptedB = latestB?.status === "accepted";
+    const isAcceptedB = latestB?.status === "accepted" || latestB?.status === "completed";
 
     if (isAcceptedA && !isAcceptedB) return -1;
     if (!isAcceptedA && isAcceptedB) return 1;
 
     // 2. SECONDARY: NEARBY PROPERTIES (DISTANCE)
     if (userCoords) {
-       if (!a.latitude || !a.longitude) return 1;
-       if (!b.latitude || !b.longitude) return -1;
+      if (!a.latitude || !a.longitude) return 1;
+      if (!b.latitude || !b.longitude) return -1;
       const distA = getDistance(userCoords.latitude, userCoords.longitude, a.latitude, a.longitude);
       const distB = getDistance(userCoords.latitude, userCoords.longitude, b.latitude, b.longitude);
       return distA - distB;
@@ -915,7 +915,7 @@ export default function TenantHomeScreen({ route }) {
 
               const latestReq = requests.find(r =>
                 normalize(r.propertyName || r.property_name) === normalize(item.name) &&
-                normalize(r.contact || r.owner_phone) === normalize(item.contact)
+                normalize(r.owner_phone) === normalize(item.ownerPhone)
               );
 
               const showBadge = latestReq && latestReq.status && latestReq.status !== 'none';
@@ -944,12 +944,13 @@ export default function TenantHomeScreen({ route }) {
                             {
                               backgroundColor:
                                 latestReq.status === "accepted" ? "#2ecc71" :
-                                  latestReq.status === "rejected" ? "#e74c3c" :
-                                    latestReq.status === "withdrawn" ? "#95a5a6" : "#f39c12"
+                                  latestReq.status === "completed" ? "#27ae60" :
+                                    latestReq.status === "rejected" ? "#e74c3c" :
+                                      latestReq.status === "withdrawn" ? "#95a5a6" : "#f39c12"
                             }
                           ]}>
                             <Text style={homeStyles.statusText}>
-                              {latestReq.status.toUpperCase()}
+                              {latestReq.status === "completed" ? "COMPLETED" : latestReq.status.toUpperCase()}
                             </Text>
                           </View>
                         )}
@@ -1267,9 +1268,11 @@ export function PropertyDetailsScreen(props) {
   const route = useRoute();
   const property = props.property || route?.params?.property;
   const onBack = props.onBack || (() => navigation.goBack());
+  const fetchTenantRequests = props.fetchTenantRequests || route?.params?.fetchTenantRequests;
+  const fetchProperties = props.fetchProperties || route?.params?.fetchProperties;
 
   const navigation = useNavigation();
-  const { tenantEmail } = useContext(TenantContext);
+  const { tenantEmail, tenantPhone } = useContext(TenantContext);
   const bookingContext = useContext(BookingContext);
   const { requests = [], setRequests } = bookingContext || {};
 
@@ -1731,7 +1734,7 @@ export function PropertyDetailsScreen(props) {
           <Text style={{ fontSize: 13, color: COLORS.TEXT_SECONDARY, marginTop: 4, fontWeight: "700" }}>
             Owned by {property.ownerName || "Owner"}
           </Text>
-          
+
           {property.rent ? (
             <Text style={{ fontSize: 18, color: COLORS.PRIMARY, marginTop: 10, fontWeight: "800" }}>
               ₹{property.rent} / month

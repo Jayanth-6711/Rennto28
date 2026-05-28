@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLanguage } from "../../utils/LanguageContext";
 import * as ImagePicker from "expo-image-picker";
@@ -588,12 +588,12 @@ export default function TenantProfile({ navigation }) {
           style={{ width: '100%', height: '100%' }}
         >
           <LinearGradient
-            colors={['#7A3FC4', '#9333EA', '#D946EF']}
+            colors={['#3B82F6', '#8B5CF6', '#D946EF']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.aiFabGradient}
           >
-            <Ionicons name="sparkles" size={26} color="#FFF" />
+            <MaterialIcons name="support-agent" size={26} color="#FFF" />
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>
@@ -618,8 +618,8 @@ export default function TenantProfile({ navigation }) {
               style={{ padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="sparkles" size={24} color="#FFF" style={{ marginRight: 8 }} />
-                <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFF' }}>Rennto AI Chat</Text>
+                <MaterialIcons name="support-agent" size={24} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFF' }}>Support Agent</Text>
               </View>
               <TouchableOpacity onPress={() => setShowAiModal(false)}>
                 <Ionicons name="close-circle" size={28} color="rgba(255,255,255,0.8)" />
@@ -646,7 +646,7 @@ export default function TenantProfile({ navigation }) {
                 ))}
                 <View style={{ height: 20 }} />
               </ScrollView>
-              
+
               <View style={{ flexDirection: 'row', padding: 12, borderTopWidth: 1, borderTopColor: '#E5E7EB', backgroundColor: '#FFF' }}>
                 <TextInput
                   style={{ flex: 1, backgroundColor: '#F3F4F6', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, maxHeight: 100, color: '#1F2937' }}

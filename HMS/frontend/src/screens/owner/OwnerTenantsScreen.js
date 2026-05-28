@@ -14,14 +14,25 @@ export default function OwnerTenantsScreen({ navigation }) {
 
   const fetchTenants = async () => {
     try {
-      const phone = await AsyncStorage.getItem('ownerPhone');
-      if (!phone) return;
+      let storedId = await AsyncStorage.getItem('ownerPhone');
+      if (!storedId) return;
+
+      let phoneToUse = storedId;
+      // Resolve actual phone number from loggedInOwnerAccounts
+      const rawAccounts = await AsyncStorage.getItem('loggedInOwnerAccounts');
+      if (rawAccounts) {
+        const accounts = JSON.parse(rawAccounts);
+        const account = accounts.find(a => String(a.id) === String(storedId));
+        if (account && account.phone) {
+          phoneToUse = account.phone;
+        }
+      }
 
       // Fetch from all possible tenant types
       const [hostelRes, aptRes, commRes] = await Promise.all([
-        fetchWithAuth(`${BASE_URL}/api/getbeds/${encodeURIComponent(phone)}/`),
-        fetchWithAuth(`${BASE_URL}/api/getapartmentbeds/${encodeURIComponent(phone)}/`),
-        fetchWithAuth(`${BASE_URL}/api/getcommercialbeds/${encodeURIComponent(phone)}/`)
+        fetchWithAuth(`${BASE_URL}/api/getbeds/${encodeURIComponent(phoneToUse)}/`),
+        fetchWithAuth(`${BASE_URL}/api/getapartmentbeds/${encodeURIComponent(phoneToUse)}/`),
+        fetchWithAuth(`${BASE_URL}/api/getcommercialbeds/${encodeURIComponent(phoneToUse)}/`)
       ]);
 
       const [hostelData, aptData, commData] = await Promise.all([
@@ -35,7 +46,15 @@ export default function OwnerTenantsScreen({ navigation }) {
       if (aptData.data) allTenants = [...allTenants, ...aptData.data.map(t => ({ ...t, type: 'Apartment' }))];
       if (commData.data) allTenants = [...allTenants, ...commData.data.map(t => ({ ...t, type: 'Commercial' }))];
 
-      setTenants(allTenants);
+      // Deduplicate by name to prevent showing duplicate names
+      const uniqueTenantsMap = new Map();
+      allTenants.forEach(t => {
+        const nameKey = (t.name || "").trim().toLowerCase();
+        if (nameKey && !uniqueTenantsMap.has(nameKey)) {
+          uniqueTenantsMap.set(nameKey, t);
+        }
+      });
+      setTenants(Array.from(uniqueTenantsMap.values()));
     } catch (error) {
       console.log('Error fetching tenants:', error);
     } finally {

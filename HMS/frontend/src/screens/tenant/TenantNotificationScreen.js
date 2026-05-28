@@ -17,6 +17,7 @@ import { BookingContext } from "@/src/context/BookingContext";
 import { TenantContext } from "@/src/context/TenantContext";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import COLORS from "../../theme/colors";
 const TenantNotificationScreen = () => {
   const navigation = useNavigation();
@@ -24,6 +25,17 @@ const TenantNotificationScreen = () => {
   const { requests, setRequests, refreshTrigger, markAllAsSeen, clearAllNotifications, clearedIds } = useContext(BookingContext);
   const [refreshing, setRefreshing] = useState(false);
   const [joiningIds, setJoiningIds] = useState([]);
+
+  // Load persisted joined IDs from AsyncStorage on mount
+  useEffect(() => {
+    const loadJoinedIds = async () => {
+      try {
+        const stored = await AsyncStorage.getItem("joinedRequestIds");
+        if (stored) setJoiningIds(JSON.parse(stored));
+      } catch (e) { }
+    };
+    loadJoinedIds();
+  }, []);
 
   const handleReject = async (item) => {
     import("react-native").then(({ Alert }) => {
@@ -59,10 +71,15 @@ const TenantNotificationScreen = () => {
     });
   };
 
-  const handleJoinNow = (item) => {
+  const handleJoinNow = async (item) => {
     if (joiningIds.includes(item.id)) return;
 
-    setJoiningIds(prev => [...prev, item.id]);
+    const updatedIds = [...joiningIds, item.id];
+    setJoiningIds(updatedIds);
+
+    try {
+      await AsyncStorage.setItem("joinedRequestIds", JSON.stringify(updatedIds));
+    } catch (e) { }
 
     navigation.replace("WelcomeScreen", {
       propertyName: item.propertyName || item.property_name,
@@ -165,6 +182,15 @@ const TenantNotificationScreen = () => {
         icon: "close-circle-outline",
         color: COLORS.TEXT_LIGHT,
         lightColor: "#F5F5F5",
+      };
+    }
+    if (status === "completed") {
+      return {
+        title: "Booking Completed",
+        message: "You have successfully joined this property. Welcome home!",
+        icon: "home",
+        color: COLORS.SUCCESS,
+        lightColor: "#E8F5E9",
       };
     }
     return {
@@ -276,25 +302,32 @@ const TenantNotificationScreen = () => {
             </View>
 
             {(item.status || "").toLowerCase() === "accepted" && (
-              <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    { backgroundColor: joiningIds.includes(item.id) ? COLORS.BORDER : COLORS.SUCCESS }
-                  ]}
-                  onPress={() => handleJoinNow(item)}
-                  disabled={joiningIds.includes(item.id)}
-                >
-                  <Text style={styles.actionBtnText}>
-                    {joiningIds.includes(item.id) ? "Joining..." : "Join Now"}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: COLORS.ERROR, marginLeft: 10 }]}
-                  onPress={() => handleReject(item)}
-                >
-                  <Text style={styles.actionBtnText}>Reject</Text>
-                </TouchableOpacity>
+              joiningIds.includes(item.id) ? (
+                <View style={[styles.actionBtn, styles.alreadyJoinedBtn]}>
+                  <Ionicons name="checkmark-circle" size={16} color={COLORS.WHITE} style={{ marginRight: 6 }} />
+                  <Text style={styles.actionBtnText}>Already Joined</Text>
+                </View>
+              ) : (
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: COLORS.SUCCESS }]}
+                    onPress={() => handleJoinNow(item)}
+                  >
+                    <Text style={styles.actionBtnText}>Join Now</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: COLORS.ERROR, marginLeft: 10 }]}
+                    onPress={() => handleReject(item)}
+                  >
+                    <Text style={styles.actionBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+              )
+            )}
+            {(item.status || "").toLowerCase() === "completed" && (
+              <View style={[styles.actionBtn, styles.alreadyJoinedBtn]}>
+                <Ionicons name="home" size={16} color={COLORS.WHITE} style={{ marginRight: 6 }} />
+                <Text style={styles.actionBtnText}>Joined ✓</Text>
               </View>
             )}
           </View>
@@ -543,6 +576,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+  },
+  alreadyJoinedBtn: {
+    flexDirection: "row",
+    backgroundColor: "#27ae60",
+    marginTop: 12,
+    flex: 0,
+    paddingHorizontal: 16,
+    alignSelf: "flex-start",
   },
   actionBtnText: {
     color: COLORS.WHITE,

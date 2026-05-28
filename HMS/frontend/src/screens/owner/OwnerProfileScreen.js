@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { useLanguage } from "../../utils/LanguageContext";
@@ -643,22 +643,22 @@ export default function OwnerProfile({ navigation }) {
           <Text style={styles.sectionTitle}>{t("quick_actions") || "Quick Actions"}</Text>
           <View style={styles.quickActionsGrid}>
             <QuickActionBtn
-              icon="business-outline"
-              label={t("edit_building")}
+              icon="construct-outline"
+              label={t("edit_building") || "Edit Building"}
               color="#7C3AED"
               bg="#F5F3FF"
-              onPress={() => navigation.navigate('Home', { editMode: true })}
+              onPress={() => navigation.navigate('Home', { editMode: true, ts: Date.now() })}
             />
             <QuickActionBtn
               icon="people-outline"
-              label={t("tenants")}
+              label={t("tenants") || "Tenants"}
               color="#059669"
               bg="#ECFDF5"
               onPress={() => navigation.navigate('Tenants')}
             />
             <QuickActionBtn
               icon="receipt-outline"
-              label={t("add_expense")}
+              label={t("add_expense") || "Add Expense"}
               color="#DC2626"
               bg="#FEF2F2"
               onPress={() => navigation.navigate('AddExpense')}
@@ -670,7 +670,7 @@ export default function OwnerProfile({ navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{t("recent_expenses") || "Recent Expenses"}</Text>
-            {expenses.length > 3 && (
+            {expenses.length > 1 && (
               <TouchableOpacity onPress={() => setShowAllExpenses(!showAllExpenses)}>
                 <Text style={styles.viewReportText}>
                   {showAllExpenses ? (t("show_less") || "Show Less") : (t("view_all") || "View All")}
@@ -687,7 +687,7 @@ export default function OwnerProfile({ navigation }) {
             </View>
           ) : (
             <View style={styles.expensesCard}>
-              {(showAllExpenses ? expenses : expenses.slice(0, 3)).map((item, idx) => {
+              {(showAllExpenses ? expenses : expenses.slice(0, 1)).map((item, idx) => {
                 const iconMap = {
                   'Electricity': 'flash-outline',
                   'Water': 'water-outline',
@@ -724,7 +724,14 @@ export default function OwnerProfile({ navigation }) {
                 const bg = bgMap[cat] || '#F3F4F6';
 
                 return (
-                  <View key={idx} style={styles.expenseItem}>
+                  <TouchableOpacity 
+                    key={idx} 
+                    style={styles.expenseItem}
+                    onPress={() => {
+                      if (!showAllExpenses) setShowAllExpenses(true);
+                    }}
+                    activeOpacity={showAllExpenses ? 1 : 0.2}
+                  >
                     <View style={styles.expenseLeft}>
                       <View style={[styles.expenseIconBox, { backgroundColor: bg }]}>
                         <Ionicons name={icon} size={22} color={color} />
@@ -739,7 +746,7 @@ export default function OwnerProfile({ navigation }) {
                       </View>
                     </View>
                     <Text style={styles.expenseAmount}>-₹{Number(item.amount).toLocaleString()}</Text>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -1116,7 +1123,7 @@ export default function OwnerProfile({ navigation }) {
             end={{ x: 1, y: 1 }}
             style={styles.aiFabGradient}
           >
-            <Ionicons name="sparkles" size={26} color="#FFF" />
+            <MaterialIcons name="support-agent" size={26} color="#FFF" />
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>
@@ -1141,8 +1148,8 @@ export default function OwnerProfile({ navigation }) {
               style={{ padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="sparkles" size={24} color="#FFF" style={{ marginRight: 8 }} />
-                <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFF' }}>Rennto AI FAQ</Text>
+                <MaterialIcons name="support-agent" size={24} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#FFF' }}>Support Agent</Text>
               </View>
               <TouchableOpacity onPress={() => setShowAiModal(false)}>
                 <Ionicons name="close-circle" size={28} color="rgba(255,255,255,0.8)" />
@@ -1169,7 +1176,7 @@ export default function OwnerProfile({ navigation }) {
                 ))}
                 <View style={{ height: 20 }} />
               </ScrollView>
-              
+
               <View style={{ flexDirection: 'row', padding: 12, borderTopWidth: 1, borderTopColor: '#E5E7EB', backgroundColor: '#FFF' }}>
                 <TextInput
                   style={{ flex: 1, backgroundColor: '#F3F4F6', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, maxHeight: 100, color: '#1F2937' }}
@@ -1427,27 +1434,31 @@ const styles = StyleSheet.create({
   quickActionBtn: {
     flex: 0.31,
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 8,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
     shadowRadius: 10,
-    elevation: 2,
+    elevation: 1,
   },
   quickActionIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
+    width: 50,
+    height: 50,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   quickActionLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#4B5563',
+    color: '#374151',
     textAlign: 'center',
+    lineHeight: 18,
   },
   expensesCard: {
     backgroundColor: 'white',

@@ -1804,9 +1804,10 @@ def get_tenant_payment_details(request, phone):
         # =========================================
         if rent == 0:
             # 1. Try to find a previous successful payment for this specific property
+            prop_name = request_obj.property_name if request_obj else ""
             prev_p = Payment.objects.filter(
                 owner_phone=owner.phone,
-                property_name=request_obj.property_name,
+                property_name=prop_name,
                 status='SUCCESS'
             ).order_by('-id').first()
            
@@ -1817,7 +1818,7 @@ def get_tenant_payment_details(request, phone):
                 # and see what their rent is in the allotment tables.
                 other_requests = JoinRequest.objects.filter(
                     owner=owner,
-                    property_name=request_obj.property_name,
+                    property_name=prop_name,
                     status='accepted'
                 ).exclude(tenant=tenant)
                
@@ -1845,18 +1846,18 @@ def get_tenant_payment_details(request, phone):
                     # 3. Last Resort: Check any payment record (even pending) for this property
                     any_p = Payment.objects.filter(
                         owner_phone=owner.phone,
-                        property_name=request_obj.property_name
+                        property_name=prop_name
                     ).order_by('-id').first()
                     if any_p:
                         rent = float(any_p.amount or 0)
                     else:
                         # If still 0, maybe use a default or log it
-                        print(f"   [BACKEND] No rent found for property: {request_obj.property_name}")
+                        print(f"   [BACKEND] No rent found for property: {prop_name}")
  
         # =========================================
         # DATE FALLBACK (FROM JOIN REQUEST)
         # =========================================
-        if not checkin_date and request_obj.check_in:
+        if not checkin_date and request_obj and request_obj.check_in:
             try:
                 # Handle both YYYY-MM-DD and other formats if needed
                 if '-' in request_obj.check_in:
@@ -1977,12 +1978,12 @@ def get_tenant_payment_details(request, phone):
  
             "propertyName":
                 request_obj.property_name
-                if request_obj.property_name
+                if request_obj and request_obj.property_name
                 else "Property",
  
             "propertyType":
                 request_obj.property_type
-                if request_obj.property_type
+                if request_obj and request_obj.property_type
                 else "hostel",
  
             "rent": rent,

@@ -279,7 +279,7 @@ export default function BuildingScreen({ route }) {
             setApartmentCounts({});
           }
         }
-        
+
 
       } catch (err) {
         console.log("Fetch Error:", err);
@@ -395,10 +395,10 @@ export default function BuildingScreen({ route }) {
   const activeLayout = editMode ? editableLayout : (response_data?.building_layout || []);
 
   const addFloor = () => {
-    const nextFloorNo = editableLayout.length > 0 
-      ? Math.max(...editableLayout.map(f => f.floorNo || 0)) + 1 
+    const nextFloorNo = editableLayout.length > 0
+      ? Math.max(...editableLayout.map(f => f.floorNo || 0)) + 1
       : 1;
-    
+
     const newFloor = {
       floorNo: nextFloorNo,
       ...(stayType === 'hostel' && { rooms: [{ roomNo: nextFloorNo * 100 + 1, beds: 1 }] }),
@@ -415,8 +415,8 @@ export default function BuildingScreen({ route }) {
 
       if (stayType === 'hostel') {
         const roomsList = floor.rooms || [];
-        const nextRoomNo = roomsList.length > 0 
-          ? Math.max(...roomsList.map(r => r.roomNo || 0)) + 1 
+        const nextRoomNo = roomsList.length > 0
+          ? Math.max(...roomsList.map(r => r.roomNo || 0)) + 1
           : floorNo * 100 + 1;
         return {
           ...floor,
@@ -424,8 +424,8 @@ export default function BuildingScreen({ route }) {
         };
       } else if (stayType === 'apartment') {
         const flatsList = floor.flats || [];
-        const nextFlatNo = flatsList.length > 0 
-          ? Math.max(...flatsList.map(f => f.flatNo || 0)) + 1 
+        const nextFlatNo = flatsList.length > 0
+          ? Math.max(...flatsList.map(f => f.flatNo || 0)) + 1
           : floorNo * 100 + 1;
         return {
           ...floor,
@@ -433,8 +433,8 @@ export default function BuildingScreen({ route }) {
         };
       } else {
         const sectionsList = floor.sections || [];
-        const nextSectionNo = sectionsList.length > 0 
-          ? Math.max(...sectionsList.map(s => s.sectionNo || 0)) + 1 
+        const nextSectionNo = sectionsList.length > 0
+          ? Math.max(...sectionsList.map(s => s.sectionNo || 0)) + 1
           : floorNo * 100 + 1;
         return {
           ...floor,
@@ -636,12 +636,24 @@ export default function BuildingScreen({ route }) {
     0
   );
 
+  const totalBedsCount = dynamicFloors.reduce(
+    (sum, f) => sum + (f.units || []).reduce((acc, u) => acc + (u.beds || 1), 0),
+    0
+  );
+
   const occupiedRooms = dynamicFloors.reduce(
     (sum, f) =>
       sum +
       (f.units || []).filter((u) =>
         isOccupied(f.floor, u.label)
       ).length,
+    0
+  );
+
+  const occupiedBedsCount = dynamicFloors.reduce(
+    (sum, f) =>
+      sum +
+      (f.units || []).reduce((acc, u) => acc + getCount(f.floor, u.label), 0),
     0
   );
   const handleSave = async (row, idx) => {
@@ -710,6 +722,7 @@ export default function BuildingScreen({ route }) {
     }
   };
   const emptyRooms = totalRooms - occupiedRooms;
+  const emptyBedsCount = totalBedsCount - occupiedBedsCount;
   // const openTenantModal = (floorLabel, room) => {
   //   setSelectedFloor(floorLabel);
   //   setSelectedRoom(room);
@@ -931,14 +944,14 @@ export default function BuildingScreen({ route }) {
   //     }
 
   //     const response = await fetch(
-  //       "http://192.168.1.10:8000/api/tenentbeds/",
+  //       "http://192.168.1.27:8000/api/tenentbeds/",
   //       {
   //         method: "POST",
   //         body: formData,
   //       }
   //     );
   // const res1 = await fetch(
-  //       "http://192.168.1.10:8000/api/apartmentbeds/",
+  //       "http://192.168.1.27:8000/api/apartmentbeds/",
   //        {
   //         method: "POST",
   //         body: formData,
@@ -1167,7 +1180,7 @@ export default function BuildingScreen({ route }) {
               <View style={styles.premiumPropertyBadge}>
                 <View style={styles.pulsingIndicator} />
                 <Text style={styles.premiumPropertyText} numberOfLines={1}>
-                  {response_data?.name || response_data?.property_name || t('my_property')}
+                  {response_data?.name || response_data?.property_name || t('my_property')} {stayType === 'hostel' ? `(${totalRooms} Rooms)` : ''}
                 </Text>
               </View>
             </View>
@@ -1202,8 +1215,8 @@ export default function BuildingScreen({ route }) {
             <View style={[styles.statsIconBox, { backgroundColor: "rgba(108, 43, 217, 0.1)" }]}>
               <Ionicons name="apps" size={18} color="#6C2BD9" />
             </View>
-            <Text style={styles.statsNumber}>{totalRooms}</Text>
-            <Text style={styles.statsLabel}>Total Rooms</Text>
+            <Text style={styles.statsNumber}>{stayType === "hostel" ? totalBedsCount : totalRooms}</Text>
+            <Text style={styles.statsLabel}>{stayType === "hostel" ? "Total Beds" : "Total Rooms"}</Text>
           </TouchableOpacity>
 
           {/* Card 2: Occupied */}
@@ -1226,8 +1239,8 @@ export default function BuildingScreen({ route }) {
             <View style={[styles.statsIconBox, { backgroundColor: "rgba(34, 197, 94, 0.1)" }]}>
               <Ionicons name="people" size={18} color="#22C55E" />
             </View>
-            <Text style={styles.statsNumber}>{occupiedRooms}</Text>
-            <Text style={styles.statsLabel}>Occupied</Text>
+            <Text style={styles.statsNumber}>{stayType === "hostel" ? occupiedBedsCount : occupiedRooms}</Text>
+            <Text style={styles.statsLabel}>{stayType === "hostel" ? "Beds Occupied" : "Occupied"}</Text>
           </TouchableOpacity>
 
           {/* Card 3: Vacant */}
@@ -1250,15 +1263,22 @@ export default function BuildingScreen({ route }) {
             <View style={[styles.statsIconBox, { backgroundColor: "rgba(239, 68, 68, 0.1)" }]}>
               <Ionicons name="home" size={18} color="#EF4444" />
             </View>
-            <Text style={styles.statsNumber}>{emptyRooms}</Text>
-            <Text style={styles.statsLabel}>Vacant</Text>
+            <Text style={styles.statsNumber}>{stayType === "hostel" ? emptyBedsCount : emptyRooms}</Text>
+            <Text style={styles.statsLabel}>{stayType === "hostel" ? "Beds Vacant" : "Vacant"}</Text>
           </TouchableOpacity>
         </View>
 
         {/* BUILDING OVERVIEW TITLE & TOGGLE */}
         <View style={{ backgroundColor: "#F8F8FC", paddingTop: 16, paddingBottom: 10 }}>
           <View style={[styles.overviewHeaderRow, { marginTop: 0, marginBottom: 0 }]}>
-            <Text style={styles.overviewTitle}>Building Overview</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={styles.overviewTitle}>Building Overview</Text>
+              {!editMode && (
+                <TouchableOpacity onPress={() => { setEditMode(true); setEditableLayout(response_data?.building_layout || []); }} style={{ marginLeft: 8, padding: 4 }}>
+                  <Ionicons name="pencil" size={20} color="#6C2BD9" />
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={styles.toggleContainer}>
               <TouchableOpacity
                 onPress={() => setViewMode("floor")}
@@ -1419,17 +1439,19 @@ export default function BuildingScreen({ route }) {
                             </>
                           )}
                         </View>
-                        <Text style={styles.roomGridSubtitle}>
-                          {
-                            (item.units || []).filter((unit) => {
-                              const count = getCount(item.floor, unit.label);
-                              if (filterMode === "occupied") return count > 0;
-                              if (filterMode === "empty") return count === 0;
-                              return true;
-                            }).length
-                          }{" "}
-                          {stayType === "hostel" ? "Rooms" : stayType === "apartment" ? "Flats" : "Sections"}
-                        </Text>
+                        {!editMode && (
+                          <Text style={styles.roomGridSubtitle}>
+                            {
+                              (item.units || []).filter((unit) => {
+                                const count = getCount(item.floor, unit.label);
+                                if (filterMode === "occupied") return count > 0;
+                                if (filterMode === "empty") return count === 0;
+                                return true;
+                              }).length
+                            }{" "}
+                            {stayType === "hostel" ? "Rooms" : stayType === "apartment" ? "Flats" : "Sections"}
+                          </Text>
+                        )}
                       </View>
 
                       <ScrollView
@@ -1520,21 +1542,21 @@ export default function BuildingScreen({ route }) {
                                     {editMode ? (
                                       <>
                                         {stayType === "hostel" && (
-                                          <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F3F4F6", borderRadius: 8 }}>
-                                            <TouchableOpacity 
-                                              onPress={(e) => { e.stopPropagation(); updateUnit(item.floorNo || parseInt(item.floor.replace("Floor ", "")), unit.roomNo || unit.flatNo || unit.sectionNo, 'decrement_beds'); }}
-                                              style={{ padding: 6 }}
-                                            >
-                                              <Ionicons name="remove" size={16} color="#4B5563" />
-                                            </TouchableOpacity>
-                                            <Text style={{ marginHorizontal: 4, fontWeight: "600", color: "#111827" }}>{unit.beds}</Text>
-                                            <TouchableOpacity 
-                                              onPress={(e) => { e.stopPropagation(); updateUnit(item.floorNo || parseInt(item.floor.replace("Floor ", "")), unit.roomNo || unit.flatNo || unit.sectionNo, 'increment_beds'); }}
-                                              style={{ padding: 6 }}
-                                            >
-                                              <Ionicons name="add" size={16} color="#4B5563" />
-                                            </TouchableOpacity>
-                                          </View>
+                                            <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F3F4F6", borderRadius: 12, paddingHorizontal: 4, paddingVertical: 2, flex: 1, marginRight: 8, justifyContent: "space-between" }}>
+                                              <TouchableOpacity
+                                                onPress={(e) => { e.stopPropagation(); updateUnit(item.floorNo || parseInt(item.floor.replace("Floor ", "")), unit.roomNo || unit.flatNo || unit.sectionNo, 'decrement_beds'); }}
+                                                style={{ padding: 6 }}
+                                              >
+                                                <Ionicons name="remove" size={18} color="#4B5563" />
+                                              </TouchableOpacity>
+                                              <Text style={{ marginHorizontal: 6, fontWeight: "700", color: "#111827", fontSize: 14 }}>{unit.beds}</Text>
+                                              <TouchableOpacity
+                                                onPress={(e) => { e.stopPropagation(); updateUnit(item.floorNo || parseInt(item.floor.replace("Floor ", "")), unit.roomNo || unit.flatNo || unit.sectionNo, 'increment_beds'); }}
+                                                style={{ padding: 6 }}
+                                              >
+                                                <Ionicons name="add" size={18} color="#4B5563" />
+                                              </TouchableOpacity>
+                                            </View>
                                         )}
                                         <TouchableOpacity
                                           onPress={(e) => {
@@ -1550,7 +1572,7 @@ export default function BuildingScreen({ route }) {
                                               ]
                                             );
                                           }}
-                                          style={[styles.cardAddBtn, { backgroundColor: "#FEE2E2" }]}
+                                          style={[styles.cardAddBtn, { backgroundColor: "#FEE2E2", width: 28, height: 28, borderRadius: 14 }]}
                                           activeOpacity={0.7}
                                         >
                                           <Ionicons name="trash" size={16} color="#EF4444" />

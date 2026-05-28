@@ -101,7 +101,7 @@ export default function IssuesScreen() {
       );
 
       const result = await response.json();
-      
+
       if (response.ok) {
         Alert.alert("Success", "Issue updated");
         setEditingId(null);
@@ -116,11 +116,13 @@ export default function IssuesScreen() {
       setLoading(false);
     }
   };
-  const fetchIssues = async () => {
+  const fetchIssues = async (isBackground = false) => {
     try {
       const storedPhone = await AsyncStorage.getItem("tenantPhone");
       if (!storedPhone) return;
-      setLoading(true);
+
+      // Only show loading spinner if it's NOT a background refresh
+      if (!isBackground) setLoading(true);
 
       const response = await fetchWithAuth(
         `${BASE_URL}/api/tenant-issues/${encodeURIComponent(storedPhone)}/`
@@ -130,12 +132,20 @@ export default function IssuesScreen() {
     } catch (error) {
       console.log("Fetch Issues Error:", error);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchIssues();
+
+    // Automatic background refresh every 30 seconds to keep data fresh
+    // and prevent app from feeling "stuck"
+    const interval = setInterval(() => {
+      fetchIssues(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [phone]);
 
   // Aligned with your specific STATUS colors
@@ -156,7 +166,7 @@ export default function IssuesScreen() {
 
   const filteredIssues = useMemo(() => {
     let result = [...issues];
-    
+
     // Sort: Pending issues first, then Completed
     result.sort((a, b) => {
       if (a.status === 'Completed' && b.status !== 'Completed') return 1;
@@ -351,7 +361,7 @@ export default function IssuesScreen() {
             <Text style={[styles.headerTitle, { textTransform: 'lowercase' }]}>{t('Issues')}</Text>
           </View>
         </View>
-        
+
         <View style={styles.headerRightActions}>
           <TouchableOpacity style={styles.addButton} onPress={toggleForm}>
             <Ionicons
@@ -372,7 +382,7 @@ export default function IssuesScreen() {
       >
         {/* DASHBOARD STATS */}
         <View style={styles.statsContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => setStatusFilter("All")}
             style={[
               styles.statCard,
@@ -382,7 +392,7 @@ export default function IssuesScreen() {
             <Text style={[styles.statNumber, statusFilter === "All" && { color: COLORS.PRIMARY }]}>{stats.total}</Text>
             <Text style={styles.statLabel}>{t('all')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => setStatusFilter("Pending")}
             style={[
               styles.statCard,
@@ -393,7 +403,7 @@ export default function IssuesScreen() {
             <Text style={[styles.statNumber, statusFilter === "Pending" && { color: COLORS.ERROR }]}>{stats.total - stats.resolved}</Text>
             <Text style={styles.statLabel}>{t('pending')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => setStatusFilter("Completed")}
             style={[
               styles.statCard,
@@ -548,8 +558,8 @@ export default function IssuesScreen() {
             const isEditing = editingId === item.id;
 
             return (
-              <View 
-                key={item.id} 
+              <View
+                key={item.id}
                 style={[
                   styles.issueCard,
                   isCompleted && { borderLeftColor: COLORS.SUCCESS, borderLeftWidth: 4 }
@@ -573,7 +583,7 @@ export default function IssuesScreen() {
                   /* INLINE EDIT FORM */
                   <View style={styles.inlineForm}>
                     <Text style={styles.inlineFormHeader}>Edit Issue</Text>
-                    
+
                     <Text style={styles.inlineInputLabel}>Title</Text>
                     <TextInput
                       style={styles.inlineInput}
@@ -625,9 +635,9 @@ export default function IssuesScreen() {
                       </TouchableOpacity>
                       {image && (
                         <View style={styles.inlinePreviewContainer}>
-                          <Image 
-                            source={{ uri: image.startsWith('http') ? image : (image.startsWith('/') ? `${BASE_URL}${image}` : image) }} 
-                            style={styles.inlinePreviewImage} 
+                          <Image
+                            source={{ uri: image.startsWith('http') ? image : (image.startsWith('/') ? `${BASE_URL}${image}` : image) }}
+                            style={styles.inlinePreviewImage}
                           />
                           <TouchableOpacity style={styles.inlineRemoveImage} onPress={() => setImage(null)}>
                             <Ionicons name="close-circle" size={20} color={COLORS.ERROR} />
@@ -897,10 +907,10 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT_PRIMARY,
     marginRight: 12,
   },
-  filterScroll: { 
+  filterScroll: {
     alignItems: 'center',
-    gap: 8, 
-    paddingRight: 20 
+    gap: 8,
+    paddingRight: 20
   },
   filterChip: {
     paddingHorizontal: 12,
@@ -908,10 +918,10 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: '#E2E8F0',
   },
-  filterText: { 
-    fontSize: 13, 
-    fontWeight: "600", 
-    color: COLORS.TEXT_SECONDARY 
+  filterText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.TEXT_SECONDARY
   },
 
   // Empty State
