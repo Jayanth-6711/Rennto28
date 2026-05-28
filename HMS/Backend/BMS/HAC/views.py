@@ -3409,12 +3409,34 @@ def update_payment_status(request):
                     )
             except Exception as e:
                 print(f"WS Payment Notification Error: {e}")
+               
+        # Also notify the Tenant about the payment status update
+        if status_value in ['SUCCESS', 'FAILED']:
+            try:
+                channel_layer = get_channel_layer()
+                sanitized_tenant = payment.tenant_phone.replace("+", "").replace("@", "_").replace(".", "_")
+                msg_text = f"Your payment for {payment.property_name} has been verified." if status_value == 'SUCCESS' else f"Your payment for {payment.property_name} was declined."
+               
+                async_to_sync(channel_layer.group_send)(
+                    f"user_notifications_{sanitized_tenant}",
+                    {
+                        "type": "send_notification",
+                        "content": {
+                            "type": "PAYMENT_VERIFIED",
+                            "message": msg_text,
+                            "status": status_value
+                        }
+                    }
+                )
+            except Exception as e:
+                print(f"WS Tenant Payment Notification Error: {e}")
  
         return Response({"message": "Payment status updated"})
  
     except Exception as e:
         return Response({"error": str(e)}, status=500)
- 
+
+        
 @api_view(['GET'])
 @jwt_required()
 def get_owner_payments(request, phone):
