@@ -53,7 +53,7 @@ const CONTAINER_PADDING = 18;
 export default function BuildingScreen({ route }) {
   const { t, changeLanguage, language } = useLanguage();
   const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [viewMode, setViewMode] = useState("list");
+  const [viewMode, setViewMode] = useState("floor");
   const [apartments, setApartments] = useState({});
   const [apartmentCounts, setApartmentCounts] = useState({});
 
@@ -163,6 +163,15 @@ export default function BuildingScreen({ route }) {
       }
     }
   }, [route?.params?.editMode]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      if (!route?.params?.editMode) {
+        setViewMode("floor");
+      }
+    });
+    return unsubscribe;
+  }, [navigation, route?.params?.editMode]);
 
   const [touchedName, setTouchedName] = useState(false);
   const [touchedPhone, setTouchedPhone] = useState(false);

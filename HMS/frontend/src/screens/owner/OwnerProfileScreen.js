@@ -117,16 +117,25 @@ export default function OwnerProfile({ navigation }) {
 
   React.useEffect(() => {
     if (!loading) {
-      if (netProfit <= 0 || totalIncome <= 0) {
+      if (totalIncome <= 0 && totalExpenses <= 0) {
         setCoords(null);
         return;
       }
       const timer = setTimeout(() => {
         if (avatarRef.current && incomeRef.current && expensesRef.current && profitRef.current) {
           const getPos = (ref) => new Promise(resolve => {
+            if (!ref) {
+              resolve({ x: 0, y: 0 });
+              return;
+            }
             ref.measure((x, y, w, h, pageX, pageY) => {
-              // Target the center of the element, adjust by half coin size (15px)
-              resolve({ x: pageX + w / 2 - 15, y: pageY + h / 2 - 15 });
+              if (pageX || pageY) {
+                resolve({ x: pageX + w / 2 - 15, y: pageY + h / 2 - 15 });
+              } else {
+                ref.measureInWindow((winX, winY, winW, winH) => {
+                  resolve({ x: (winX || 0) + (winW || 0) / 2 - 15, y: (winY || 0) + (winH || 0) / 2 - 15 });
+                });
+              }
             });
           });
 
@@ -136,18 +145,19 @@ export default function OwnerProfile({ navigation }) {
             getPos(expensesRef.current),
             getPos(profitRef.current)
           ]).then(([avatar, income, expenses, profit]) => {
-            if (avatar.x && income.x) {
+            if (avatar && income && expenses && profit) {
               setCoords({ avatar, income, expenses, profit });
             }
           });
         }
-      }, 600);
+      }, 800);
       return () => clearTimeout(timer);
     }
-  }, [loading, netProfit, totalIncome]);
+  }, [loading, totalIncome, totalExpenses]);
 
   React.useEffect(() => {
-    if (coords && !animationFinished && totalIncome > 0 && totalExpenses > 0) {
+    // Play animation whenever we have any financial data (income or expenses)
+    if (coords && !animationFinished && (totalIncome > 0 || totalExpenses > 0)) {
       const animations = coinsAnim.map((coin, i) => {
         coin.anim.setValue({ x: coords.avatar.x, y: coords.avatar.y });
         coin.scale.setValue(0.3);
@@ -319,6 +329,7 @@ export default function OwnerProfile({ navigation }) {
       console.log('Upsert account error:', e);
     }
   };
+
   // ------------------------------------
 
   useFocusEffect(
@@ -724,8 +735,8 @@ export default function OwnerProfile({ navigation }) {
                 const bg = bgMap[cat] || '#F3F4F6';
 
                 return (
-                  <TouchableOpacity 
-                    key={idx} 
+                  <TouchableOpacity
+                    key={idx}
                     style={styles.expenseItem}
                     onPress={() => {
                       if (!showAllExpenses) setShowAllExpenses(true);
@@ -758,7 +769,7 @@ export default function OwnerProfile({ navigation }) {
           <Text style={styles.sectionTitle}>{t("manage_accounts") || "Manage Accounts"}</Text>
           <TouchableOpacity
             style={[styles.expensesCard, { flexDirection: 'row', alignItems: 'center', padding: 16, marginTop: 10, shadowColor: '#7C3AED' }]}
-            onPress={() => navigation.navigate('OwnerRegistrationScreen', { phone: editableOwner.phone })}
+            onPress={() => navigation.navigate('OwnerLoginScreen')}
           >
             <View style={[styles.expenseIconBox, { backgroundColor: '#F5F3FF' }]}>
               <Ionicons name="person-add-outline" size={24} color="#7C3AED" />

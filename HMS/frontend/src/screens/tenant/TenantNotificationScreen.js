@@ -10,7 +10,11 @@ import {
   StatusBar,
   TouchableOpacity,
   RefreshControl,
+  Modal,
+  ActivityIndicator,
+  Image,
 } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { BookingContext } from "@/src/context/BookingContext";
@@ -25,6 +29,10 @@ const TenantNotificationScreen = () => {
   const { requests, setRequests, refreshTrigger, markAllAsSeen, clearAllNotifications, clearedIds } = useContext(BookingContext);
   const [refreshing, setRefreshing] = useState(false);
   const [joiningIds, setJoiningIds] = useState([]);
+  const [showIdModal, setShowIdModal] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   // Load persisted joined IDs from AsyncStorage on mount
   useEffect(() => {
@@ -71,20 +79,51 @@ const TenantNotificationScreen = () => {
     });
   };
 
-  const handleJoinNow = async (item) => {
+  const handleJoinNow = (item) => {
     if (joiningIds.includes(item.id)) return;
+    setSelectedItem(item);
+    setSelectedFile(null);
+    setShowIdModal(true);
+  };
 
-    const updatedIds = [...joiningIds, item.id];
-    setJoiningIds(updatedIds);
-
+  const handlePickDocument = async () => {
     try {
-      await AsyncStorage.setItem("joinedRequestIds", JSON.stringify(updatedIds));
-    } catch (e) { }
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "image/*",
+      });
 
-    navigation.replace("WelcomeScreen", {
-      propertyName: item.propertyName || item.property_name,
-      requestId: item.id,
-    });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        const asset = res.assets[0];
+        setSelectedFile(asset);
+      }
+    } catch (err) {
+      console.log("Error picking document", err);
+    }
+  };
+
+  const submitIdentityProof = async () => {
+    if (!selectedFile || !selectedItem) return;
+
+    setUploading(true);
+
+    setTimeout(async () => {
+      const item = selectedItem;
+      const updatedIds = [...joiningIds, item.id];
+      setJoiningIds(updatedIds);
+
+      try {
+        await AsyncStorage.setItem("joinedRequestIds", JSON.stringify(updatedIds));
+        await AsyncStorage.setItem(`tenant_id_proof_${item.id}`, JSON.stringify(selectedFile));
+      } catch (e) { }
+
+      setUploading(false);
+      setShowIdModal(false);
+
+      navigation.replace("WelcomeScreen", {
+        propertyName: item.propertyName || item.property_name,
+        requestId: item.id,
+      });
+    }, 1200);
   };
 
   const fetchRequests = async () => {
@@ -399,6 +438,115 @@ const TenantNotificationScreen = () => {
           ))
         )}
       </ScrollView>
+
+      <Modal
+        visible={showIdModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!uploading) setShowIdModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Identity Verification</Text>
+              <TouchableOpacity 
+                disabled={uploading} 
+                onPress={() => setShowIdModal(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScrollContent}
+            >
+              <View style={styles.infoBox}>
+                <Ionicons name="shield-checkmark" size={24} color={COLORS.PRIMARY} />
+                <Text style={styles.infoText}>
+                  Please upload your identity proof (Aadhaar, Passport, or PAN card) to join the property.
+                </Text>
+              </View>
+
+              <Text style={styles.inputLabel}>Select Document</Text>
+              
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={uploading}
+                onPress={handlePickDocument}
+                style={[
+                  styles.uploadContainer,
+                  selectedFile && styles.uploadContainerActive
+                ]}
+              >
+                {selectedFile ? (
+                  <View style={styles.previewContainer}>
+                    <Image source={{ uri: selectedFile.uri }} style={styles.proofImagePreview} />
+                    <View style={styles.fileDetails}>
+                      <Text style={styles.fileName} numberOfLines={1}>
+                        {selectedFile.name || "identity_proof.jpg"}
+                      </Text>
+                      <Text style={styles.fileSize}>
+                        {selectedFile.size ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : "Image selected"}
+                      </Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.deleteFileBtn} 
+                      disabled={uploading}
+                      onPress={() => setSelectedFile(null)}
+                    >
+                      <Ionicons name="trash-outline" size={20} color={COLORS.ERROR} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.uploadPlaceholder}>
+                    <View style={styles.uploadIconCircle}>
+                      <Ionicons name="cloud-upload-outline" size={32} color={COLORS.PRIMARY} />
+                    </View>
+                    <Text style={styles.uploadTitle}>Choose Identity Proof</Text>
+                    <Text style={styles.uploadSubtitle}>PNG, JPG, or PDF up to 5MB</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.guidelinesBox}>
+                <Text style={styles.guidelineTitle}>Upload Guidelines:</Text>
+                <Text style={styles.guidelineItem}>• Document must be clearly visible and not blurry.</Text>
+                <Text style={styles.guidelineItem}>• Ensure all four edges of the document are captured.</Text>
+                <Text style={styles.guidelineItem}>• High resolution JPG, PNG formats are accepted.</Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                disabled={uploading}
+                style={[styles.modalActionBtn, styles.cancelBtn]}
+                onPress={() => setShowIdModal(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={!selectedFile || uploading}
+                style={[
+                  styles.modalActionBtn, 
+                  styles.submitBtn,
+                  (!selectedFile || uploading) && styles.submitBtnDisabled
+                ]}
+                onPress={submitIdentityProof}
+              >
+                {uploading ? (
+                  <ActivityIndicator size="small" color={COLORS.WHITE} />
+                ) : (
+                  <Text style={styles.submitBtnText}>Submit & Join</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -589,6 +737,178 @@ const styles = StyleSheet.create({
     color: COLORS.WHITE,
     fontWeight: "bold",
     fontSize: 13,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: COLORS.WHITE,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 34,
+    maxHeight: "85%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: COLORS.TEXT_PRIMARY,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    backgroundColor: "#F5F3FF",
+    borderRadius: 999,
+  },
+  modalScrollContent: {
+    paddingBottom: 20,
+  },
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F3FF",
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.1)",
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.TEXT_PRIMARY,
+    lineHeight: 20,
+    fontWeight: "500",
+  },
+  inputLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 10,
+  },
+  uploadContainer: {
+    backgroundColor: "#FAF9FF",
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: "rgba(139, 92, 246, 0.3)",
+    borderRadius: 20,
+    padding: 20,
+    minHeight: 150,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  uploadContainerActive: {
+    borderStyle: "solid",
+    borderColor: COLORS.PRIMARY,
+    backgroundColor: "#F9F8FF",
+  },
+  uploadPlaceholder: {
+    alignItems: "center",
+  },
+  uploadIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#EEF2FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  uploadTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 4,
+  },
+  uploadSubtitle: {
+    fontSize: 12,
+    color: COLORS.TEXT_LIGHT,
+    fontWeight: "500",
+  },
+  previewContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    gap: 12,
+  },
+  proofImagePreview: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    backgroundColor: "#E2E8F0",
+  },
+  fileDetails: {
+    flex: 1,
+  },
+  fileName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: COLORS.TEXT_PRIMARY,
+  },
+  fileSize: {
+    fontSize: 12,
+    color: COLORS.TEXT_LIGHT,
+    marginTop: 2,
+  },
+  deleteFileBtn: {
+    padding: 8,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 12,
+  },
+  guidelinesBox: {
+    backgroundColor: "#FAF9FF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.05)",
+  },
+  guidelineTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 8,
+  },
+  guidelineItem: {
+    fontSize: 13,
+    color: COLORS.TEXT_SECONDARY,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  modalActionRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 10,
+  },
+  modalActionBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cancelBtn: {
+    backgroundColor: "#F1F5F9",
+  },
+  cancelBtnText: {
+    color: COLORS.TEXT_PRIMARY,
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  submitBtn: {
+    backgroundColor: COLORS.PRIMARY,
+  },
+  submitBtnDisabled: {
+    backgroundColor: "rgba(139, 92, 246, 0.4)",
   },
 });
 

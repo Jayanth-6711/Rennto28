@@ -53,12 +53,25 @@ export default function OwnerNavigation({ route, navigation }) {
   // --- Account Switcher State ---
   const bottomSheetRef = useRef(null);
   const [loggedInAccounts, setLoggedInAccounts] = useState([]);
+  const [activePhone, setactivePhone] = useState('');
 
   const loadLoggedInAccounts = async () => {
     try {
-      const raw = await AsyncStorage.getItem('loggedInOwnerAccounts');
-      if (raw) {
-        setLoggedInAccounts(JSON.parse(raw));
+      const phone = await AsyncStorage.getItem('ownerPhone');
+      if (phone) {
+        const trimmed = phone.trim();
+        setactivePhone(trimmed);
+        const response = await fetchWithAuth(`${BASE_URL}/api/owner_accounts/${encodeURIComponent(trimmed)}/`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.accounts) {
+            const normalized = data.accounts.map(acc => ({
+              ...acc,
+              id: String(acc.id)
+            }));
+            setLoggedInAccounts(normalized);
+          }
+        }
       }
     } catch (e) {
       console.log('Load accounts error:', e);
@@ -78,12 +91,13 @@ export default function OwnerNavigation({ route, navigation }) {
 
   const handleSwitchAccount = async (account) => {
     try {
-      await AsyncStorage.setItem('ownerPhone', account.phone);
+      const targetId = String(account.id);
+      await AsyncStorage.setItem('ownerPhone', targetId);
       bottomSheetRef.current?.close();
       setTimeout(() => {
         navigation.reset({
           index: 0,
-          routes: [{ name: 'OwnerNavigation', params: { phone: account.phone } }],
+          routes: [{ name: 'OwnerNavigation', params: { phone: targetId } }],
         });
       }, 350);
     } catch (e) {
@@ -103,15 +117,6 @@ export default function OwnerNavigation({ route, navigation }) {
     loadLoggedInAccounts(); // Refresh before showing
     bottomSheetRef.current?.snapToIndex(0);
   };
-
-  // Get current active phone
-  const [activePhone, setactivePhone] = useState('');
-  useEffect(() => {
-    (async () => {
-      const phone = await AsyncStorage.getItem('ownerPhone');
-      if (phone) setactivePhone(phone.trim());
-    })();
-  }, []);
 
   // Listen for suspension events and incoming requests
   useEffect(() => {

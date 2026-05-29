@@ -2666,12 +2666,9 @@ def send_join_request(request):
 @jwt_required()
 def owner_requests(request, phone):
     try:
-        if hasattr(request, 'custom_user') and request.custom_user and isinstance(request.custom_user, Owners):
-            owner = request.custom_user
-        else:
-            owner = Owners.objects.filter(Q(owner_id=phone) | Q(phone=phone)).order_by('-created_at').first()
-            if not owner:
-                raise Owners.DoesNotExist
+        owner = Owners.objects.filter(Q(owner_id=phone) | Q(phone=phone)).order_by('-created_at').first()
+        if not owner:
+            raise Owners.DoesNotExist
     except Owners.DoesNotExist:
         return Response({"error": "Owner not found"}, status=404)
 
@@ -2846,12 +2843,9 @@ def tenant_issues(request, identifier):
 @jwt_required()
 def owner_issues(request, phone):
     try:
-        if hasattr(request, 'custom_user') and request.custom_user and isinstance(request.custom_user, Owners):
-            owner = request.custom_user
-        else:
-            owner = Owners.objects.filter(Q(owner_id=phone) | Q(phone=phone)).order_by('-created_at').first()
-            if not owner:
-                raise Owners.DoesNotExist
+        owner = Owners.objects.filter(Q(owner_id=phone) | Q(phone=phone)).order_by('-created_at').first()
+        if not owner:
+            raise Owners.DoesNotExist
     except Owners.DoesNotExist:
         return Response({"error": "Owner not found"}, status=404)
  

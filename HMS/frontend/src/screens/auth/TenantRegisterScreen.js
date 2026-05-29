@@ -34,6 +34,7 @@ export default function TenantRegisterScreen({ navigation }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const otpInputs = useRef([]);
   const [sessionId, setSessionId] = useState("");
 
   const [showOTPField, setShowOTPField] = useState(false);
@@ -91,23 +92,12 @@ export default function TenantRegisterScreen({ navigation }) {
 
       setLoadingOTP(true);
 
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `https://2factor.in/API/V1/${apiKey}/SMS/${phone}/AUTOGEN3/OTP1`
       );
 
-      const text = await response.text();
-      let data = {};
-      try {
-        data = text ? JSON.parse(text) : { Status: "Error", Details: "Empty Response" };
-      } catch (e) {
-        data = { Status: "Error", Details: "Parse Error" };
-      }
-
-      // Fallback for development: if OTP API fails, allow them to proceed with DEV_SESSION
-      if (data.Status !== "Success") {
-        console.log("OTP API failed, falling back to DEV_SESSION");
-        data = { Status: "Success", Details: "DEV_SESSION" };
-      }
+      const data = await response.json();
+      console.log("OTP Response:", data);
 
       if (data.Status === "Success") {
 
@@ -159,71 +149,15 @@ export default function TenantRegisterScreen({ navigation }) {
 
       setLoadingVerify(true);
 
-      const verifyResponse = await fetch(
+      const response = await fetchWithAuth(
         `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${sessionId}/${otp}`
       );
 
-      const verifyText = await verifyResponse.text();
-      let verifyData = {};
-      try {
-        verifyData = verifyText ? JSON.parse(verifyText) : { Status: "Error", Details: "Empty Response" };
-      } catch (e) {
-        verifyData = { Status: "Error" };
-      }
+      const data = await response.json();
+      console.log("LOG VERIFY OTP RESPONSE:", data);
 
-      if (verifyData.Status === "Success" || otp === "1234") {
+      if (data.Status !== "Success") {
 
-        setIsPhoneVerified(true);
-
-        const checkResponse = await fetchWithAuth(
-          `${BASE_URL}/api/check-user/${phone}/`
-        );
-
-        const userData = await checkResponse.json();
-        console.log("USER CHECK:", userData);
-
-        if (userData.exists) {
-
-          // Save tenant phone number
-          await AsyncStorage.setItem("tenantPhone", phone);
-          if (userData.token) {
-            await AsyncStorage.setItem("userToken", userData.token);
-          }
-
-          // Save tenant email for future API calls
-          if (userData.email) {
-            await AsyncStorage.setItem("tenantEmail", userData.email);
-          }
-
-          // Extract tenant ID from various possible response shapes (prefer userData)
-          const id =
-            userData.user?.id ||
-            userData.id ||
-            verifyData?.data?.id ||
-            verifyData?.tenant?.id ||
-            verifyData?.id ||
-            verifyData?.tenant_id;
-
-          if (id) {
-            await AsyncStorage.setItem("tenantId", id.toString());
-          }
-
-          console.log("SAVED TENANT ID:", id);
-
-          Alert.alert("Welcome", "Login Successful");
-
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "TenantNavigation" }],
-          });
-
-        } else {
-
-          setShowOTPField(false);
-          setShowNameField(true);
-
-        }
-      } else {
         setOtp("");
         setErrors((prev) => ({
           ...prev,
@@ -232,11 +166,60 @@ export default function TenantRegisterScreen({ navigation }) {
         return;
       }
 
+      setIsPhoneVerified(true);
 
+      const checkResponse = await fetchWithAuth(
+        `${BASE_URL}/api/check-user/${phone}/`
+      );
+
+      const userData = await checkResponse.json();
+      console.log("USER CHECK:", userData);
+
+      if (userData.exists) {
+
+        // Save tenant phone number
+        await AsyncStorage.setItem("tenantPhone", phone);
+        if (userData.token) {
+          await AsyncStorage.setItem("userToken", userData.token);
+        }
+
+        // Save tenant email for future API calls
+        if (userData.email) {
+          await AsyncStorage.setItem("tenantEmail", userData.email);
+        }
+
+        // Extract tenant ID from various possible response shapes (prefer userData)
+        const id =
+          userData.user?.id ||
+          userData.id ||
+          data?.data?.id ||
+          data?.tenant?.id ||
+          data?.id ||
+          data?.tenant_id;
+
+        if (id) {
+          await AsyncStorage.setItem("tenantId", id.toString());
+        }
+
+        console.log("SAVED TENANT ID:", id);
+
+        Alert.alert("Welcome", "Login Successful");
+
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "TenantNavigation" }],
+        });
+
+      } else {
+
+        setShowOTPField(false);
+        setShowNameField(true);
+
+      }
 
     } catch (error) {
 
-      console.log("VERIFY OTP ERROR:", error);
+      console.log("LOG  CHECK USER ERROR:", error);
       Alert.alert("Error", "Something went wrong");
 
     } finally {
@@ -290,7 +273,7 @@ export default function TenantRegisterScreen({ navigation }) {
 
         // SAVE PHONE
         await AsyncStorage.setItem("tenantPhone", phone);
-        
+
         // SAVE TOKEN
         if (data.token) {
           await AsyncStorage.setItem("userToken", data.token);
@@ -382,11 +365,11 @@ export default function TenantRegisterScreen({ navigation }) {
 
             {/* ✅ SAME TITLE STYLE */}
             <Text style={styles.title}>
-              {t("register_title") || "Create Account"}
+              {t("Sign In/Sign Up") || "Create Account"}
             </Text>
 
             <Text style={styles.subtitle}>
-              Register With Mobile OTP
+              Login With Mobile OTP
             </Text>
 
             {/* PHONE INPUT — same style as OwnerLoginScreen */}
@@ -458,27 +441,71 @@ export default function TenantRegisterScreen({ navigation }) {
             {showOTPField && !isPhoneVerified && (
               <View>
 
-                <View style={styles.inputContainer}>
+                <View style={styles.otpWrapper}>
 
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={20}
-                    color={LIGHT_PURPLE}
-                  />
+                  {[0, 1, 2, 3].map((index) => (
 
-                  <TextInput
-                    placeholder="Enter 4-digit OTP"
-                    placeholderTextColor="#8A8F98"
-                    style={styles.input}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    value={otp}
-                    autoFocus
-                    onChangeText={(text) => {
-                      setOtp(text);
-                      setErrors((prev) => ({ ...prev, otp: "" }));
-                    }}
-                  />
+                    <TextInput
+                      key={index}
+
+                      ref={(ref) =>
+                        (otpInputs.current[index] = ref)
+                      }
+
+                      style={styles.otpBox}
+
+                      keyboardType="number-pad"
+
+                      maxLength={1}
+
+                      value={otp[index] || ""}
+
+                      autoFocus={index === 0}
+
+                      onChangeText={(value) => {
+
+                        const otpArray =
+                          otp.split("");
+
+                        otpArray[index] = value;
+
+                        const newOtp =
+                          otpArray.join("");
+
+                        setOtp(newOtp);
+
+                        setErrors((prev) => ({
+                          ...prev,
+                          otp: "",
+                        }));
+
+                        if (
+                          value &&
+                          index < 3
+                        ) {
+                          otpInputs.current[
+                            index + 1
+                          ]?.focus();
+                        }
+
+                      }}
+
+                      onKeyPress={({ nativeEvent }) => {
+
+                        if (
+                          nativeEvent.key === "Backspace" &&
+                          !otp[index] &&
+                          index > 0
+                        ) {
+                          otpInputs.current[
+                            index - 1
+                          ]?.focus();
+                        }
+
+                      }}
+                    />
+
+                  ))}
 
                 </View>
 
@@ -638,6 +665,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     fontSize: 16,
     color: COLORS.TEXT_PRIMARY,
+  },
+  otpWrapper: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 15,
+    marginTop: 10,
+  },
+
+  otpBox: {
+    width: 48,
+    height: 50,
+
+    borderRadius: 12,
+
+    backgroundColor: "#FFFFFF",
+
+    borderWidth: 1.5,
+    borderColor: "#D8D8E0",
+
+    textAlign: "center",
+
+    fontSize: 17,
+    fontWeight: "500",
+
+    color: COLORS.TEXT_PRIMARY,
+
+    paddingVertical: 0,
+
+    includeFontPadding: false,
+    textAlignVertical: "center",
+
+    elevation: 2,
+
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
   },
 
   button: {

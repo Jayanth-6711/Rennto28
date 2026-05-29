@@ -1,6 +1,6 @@
 import BASE_URL, { fetchWithAuth } from "@/src/config/Api";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
@@ -28,6 +28,7 @@ export default function OwnerLoginScreen({ navigation }) {
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const otpInputs = useRef([]);
   const [sessionId, setSessionId] = useState("");
   const [showOTPField, setShowOTPField] = useState(false);
   const [errors, setErrors] = useState({});
@@ -56,19 +57,7 @@ export default function OwnerLoginScreen({ navigation }) {
         `https://2factor.in/API/V1/${apiKey}/SMS/${phone}/AUTOGEN3/OTP1`
       );
 
-      const text = await response.text();
-      let data = {};
-      try {
-        data = text ? JSON.parse(text) : { Status: "Error", Details: "Empty Response" };
-      } catch (e) {
-        data = { Status: "Error", Details: "Parse Error" };
-      }
-
-      // Fallback for development: if OTP API fails, allow them to proceed with DEV_SESSION
-      if (data.Status !== "Success") {
-        console.log("OTP API failed, falling back to DEV_SESSION");
-        data = { Status: "Success", Details: "DEV_SESSION" };
-      }
+      const data = await response.json();
 
       console.log("SEND OTP RESPONSE:", data);
 
@@ -116,18 +105,11 @@ export default function OwnerLoginScreen({ navigation }) {
         `https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${sessionId}/${otp}`
       );
 
-      const verifyText = await verifyResponse.text();
-      let verifyData = {};
-      try {
-        verifyData = verifyText ? JSON.parse(verifyText) : { Status: "Error", Details: "Empty Response" };
-      } catch (e) {
-        verifyData = { Status: "Error" };
-      }
+      const verifyData = await verifyResponse.json();
 
       console.log("VERIFY OTP RESPONSE:", verifyData);
 
-      // Dev backdoor: 1234 always works
-      if (verifyData.Status === "Success" || otp === "1234") {
+      if (verifyData.Status === "Success") {
 
         try {
 
@@ -140,23 +122,18 @@ export default function OwnerLoginScreen({ navigation }) {
 
           console.log("CHECK USER:", userData);
 
-          if (userData.error) {
-            Alert.alert("Access Denied", userData.error);
-            return;
-          }
-
           if (userData.exists) {
 
             // EXISTING OWNER
             Alert.alert("Welcome", "Login Successful");
 
             if (userData.token) await AsyncStorage.setItem("userToken", userData.token);
-            await AsyncStorage.setItem("ownerPhone", userData.user.id);
-            
+            await AsyncStorage.setItem("ownerPhone", userData.user.phone);
+
             const raw = await AsyncStorage.getItem("loggedInOwnerAccounts");
             let accounts = raw ? JSON.parse(raw) : [];
-            if (!accounts.find(a => a.id === userData.user.id)) {
-              accounts.push({ id: userData.user.id, phone: userData.user.phone, name: userData.user.name });
+            if (!accounts.find(a => a.phone === userData.user.phone)) {
+              accounts.push({ phone: userData.user.phone, name: userData.user.name });
               await AsyncStorage.setItem("loggedInOwnerAccounts", JSON.stringify(accounts));
             }
 
@@ -236,7 +213,7 @@ export default function OwnerLoginScreen({ navigation }) {
             </View>
 
             {/* TITLE */}
-            <Text style={styles.title}>Owner Login</Text>
+            <Text style={styles.title}>Sign In/Sign Up</Text>
 
             <Text style={styles.subtitle}>
               Login With Mobile OTP
@@ -279,27 +256,68 @@ export default function OwnerLoginScreen({ navigation }) {
             {showOTPField && (
               <View>
 
-                <View style={styles.inputContainer}>
+                <View style={styles.otpWrapper}>
 
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={20}
-                    color={PRIMARY}
-                  />
+                  {[0, 1, 2, 3].map((index) => (
 
-                  <TextInput
-                    placeholder="Enter 4-digit OTP"
-                    placeholderTextColor="#8A8F98"
-                    style={styles.input}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    value={otp}
-                    autoFocus // ✅ AUTO FOCUS OTP FIELD
-                    onChangeText={(text) => {
-                      setOtp(text);
-                      setErrors((prev) => ({ ...prev, otp: "" }));
-                    }}
-                  />
+                    <TextInput
+                      key={index}
+                      ref={(ref) => (otpInputs.current[index] = ref)}
+
+                      style={styles.otpBox}
+
+                      keyboardType="number-pad"
+
+                      maxLength={1}
+
+                      value={otp[index] || ""}
+
+                      autoFocus={index === 0}
+
+                      onChangeText={(value) => {
+
+                        const otpArray =
+                          otp.split("");
+
+                        otpArray[index] = value;
+
+                        const newOtp =
+                          otpArray.join("");
+
+                        setOtp(newOtp);
+
+                        setErrors((prev) => ({
+                          ...prev,
+                          otp: "",
+                        }));
+
+                        if (
+                          value &&
+                          index < 3
+                        ) {
+                          otpInputs.current[
+                            index + 1
+                          ]?.focus();
+                        }
+
+                      }}
+
+                      onKeyPress={({ nativeEvent }) => {
+
+                        if (
+                          nativeEvent.key === "Backspace" &&
+                          !otp[index] &&
+                          index > 0
+                        ) {
+                          otpInputs.current[
+                            index - 1
+                          ]?.focus();
+                        }
+
+                      }}
+                    />
+
+                  ))}
 
                 </View>
 
@@ -420,6 +438,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.TEXT_PRIMARY,
   },
+  otpWrapper: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 15,
+    marginTop: 10,
+  },
+
+  otpBox: {
+    width: 48,
+    height: 50,
+
+    borderRadius: 12,
+
+    backgroundColor: "#FFFFFF",
+
+    borderWidth: 1.5,
+    borderColor: "#D8D8E0",
+
+    textAlign: "center",
+
+    fontSize: 17,
+    fontWeight: "500",
+
+    color: COLORS.TEXT_PRIMARY,
+
+    paddingVertical: 0,
+
+    includeFontPadding: false,
+    textAlignVertical: "center",
+
+    elevation: 2,
+
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+  },
 
   button: {
     backgroundColor: NAVY,
@@ -465,3 +523,4 @@ const styles = StyleSheet.create({
   },
 
 });
+
